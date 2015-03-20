@@ -1,7 +1,19 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "errol.h"
+
+
+/*
+ * floating point format definitions
+ */
+
+typedef double fpnum_t;
+#define FP_MAX DOUBLE_MAX
+#define FP_MIN DOUBLE_MIN
+#define fpnext(val) nextafter(val, INFINITY)
+#define fpprev(val) nextafter(val, -INFINITY)
 
 
 /**
@@ -10,9 +22,15 @@
  */
 
 struct hp_t {
-	double val, off;
+	fpnum_t val, off;
 };
 
+
+/*
+ * lookup table data
+ */
+
+#include "lookup.h"
 
 /*
  * high-precision constants
@@ -27,21 +45,128 @@ struct hp_t {
 static void hp_normalize(struct hp_t *hp);
 static void hp_mul10(struct hp_t *hp);
 static void hp_div10(struct hp_t *hp);
-
-static double fp_next(double val);
-static double fp_prev(double val);
+static struct hp_t hp_prod(struct hp_t in, double val);
+struct hp_t hp_prod2(struct hp_t in, double val);
 
 
 /**
  * Errol double to ASCII conversion.
  *   @val: The value.
  *   @buf: The output buffer.
+ *   @opt: The optimality flag.
  *   &returns: The exponent.
  */
 
-int16_t errol_dtoa(double val, char *buf)
+int16_t errol1_dtoa(double val, char *buf, bool *opt)
 {
-	return 0;
+	double ten, lten;
+	int16_t exp;
+	struct hp_t mid, inhi, inlo, outhi, outlo;
+
+	ten = 1.0;
+	exp = 1;
+	//mid = (struct hp_t){ val, 0.0 };
+
+	/* normalize the midpoint */
+
+	if(0) {
+		int e;
+		frexp(val, &e);
+		exp = 307 + (double)e*0.30103; //0.30103 = log_10(2)
+		if(exp < 20)
+			exp = 20;
+		else if(exp >= LOOKUP_TABLE_LEN)
+			exp = LOOKUP_TABLE_LEN - 1;
+
+		mid = lookup_table[exp];
+		if(1)mid = hp_prod2(mid, val);
+		else mid = hp_prod(mid, val);
+		lten = lookup_table[exp].val;
+		ten = 1.0;
+
+		exp -= 307;
+	}
+	else {
+		mid.val = val;
+		mid.off = 0.0;
+		lten = 1.0;
+	}
+
+	while(mid.val > 10.0 || (mid.val == 10.0 && mid.off >= 0.0))
+		exp++, hp_div10(&mid), ten /= 10.0;
+
+	while(mid.val < 1.0 || (mid.val == 1.0 && mid.off < 0.0))
+		exp--, hp_mul10(&mid), ten *= 10.0;
+
+	inhi.val = mid.val;
+	inhi.off = mid.off + (fpnext(val) - val) * lten * ten / (2.0 + 0.00000001);
+	inlo.val = mid.val;
+	inlo.off = mid.off + (fpprev(val) - val) * lten * ten / (2.0 + 0.00000001);
+	outhi.val = mid.val;
+	outhi.off = mid.off + (fpnext(val) - val) * lten * ten / (2.0 - 0.00000001);
+	outlo.val = mid.val;
+	outlo.off = mid.off + (fpprev(val) - val) * lten * ten / (2.0 - 0.00000001);
+
+	hp_normalize(&inhi);
+	hp_normalize(&inlo);
+	hp_normalize(&outhi);
+	hp_normalize(&outlo);
+
+	/* normalized boundaries */
+
+	while(inhi.val > 10.0 || (inhi.val == 10.0 && inhi.off >= 0.0))
+		exp++, hp_div10(&inhi), hp_div10(&inlo), hp_div10(&outhi), hp_div10(&outlo);
+
+	while(inhi.val < 1.0 || (inhi.val == 1.0 && inhi.off < 0.0))
+		exp--, hp_mul10(&inhi), hp_mul10(&inlo), hp_mul10(&outhi), hp_mul10(&outlo);
+
+	/* digit generation */
+
+	*opt = true;
+
+	while(inhi.val != 0.0 || inhi.off != 0.0) {
+		uint8_t ldig, hdig;
+
+		hdig = (uint8_t)(inhi.val);
+		inhi.val -= hdig;
+		if((inhi.val == 0.0) && (inhi.off < 0))
+			hdig -= 1, inhi.val += 1.0;
+
+		ldig = (uint8_t)(inlo.val);
+		inlo.val -= ldig;
+		if((inlo.val == 0.0) && (inlo.off < 0))
+			ldig -= 1, inlo.val += 1.0;
+
+		*buf++ = hdig + '0';
+
+		if(ldig != hdig)
+			break;
+
+		//printf("%c %c ", ldig + '0', hdig + '0');
+
+		hdig = (uint8_t)(outhi.val);
+		outhi.val -= hdig;
+		if((outhi.val == 0.0) && (outhi.off < 0))
+			hdig -= 1, outhi.val += 1.0;
+
+		ldig = (uint8_t)(outlo.val);
+		outlo.val -= ldig;
+		if((outlo.val == 0.0) && (outlo.off < 0))
+			ldig -= 1, outlo.val += 1.0;
+
+		if(ldig != hdig)
+			*opt = false;
+
+		//printf("%c %c \n", ldig + '0', hdig + '0');
+		hp_mul10(&inhi);
+		hp_mul10(&inlo);
+		hp_mul10(&outhi);
+		hp_mul10(&outlo);
+	}
+
+	*buf = '\0';
+
+	return exp;
 }
 
 /**
@@ -86,9 +211,9 @@ int16_t errol3_dtoa(double val, char *buf)
 	/* compute boundaries */
 
 	high.val = mid.val;
-	high.off = mid.off + (fp_next(val) - val) * ten / 2.00000001;
+	high.off = mid.off + (fpnext(val) - val) * ten / 2.00000001;
 	low.val = mid.val;
-	low.off = mid.off + (fp_prev(val) - val) * ten / 2.00000001;
+	low.off = mid.off + (fpprev(val) - val) * ten / 2.00000001;
 
 	hp_normalize(&high);
 	hp_normalize(&low);
@@ -103,6 +228,7 @@ int16_t errol3_dtoa(double val, char *buf)
 
 	/* digit generation */
 
+	int a = 0;
 	while(high.val != 0.0 || high.off != 0.0) {
 		uint8_t ldig, hdig;
 
@@ -123,6 +249,8 @@ int16_t errol3_dtoa(double val, char *buf)
 
 		hp_mul10(&high);
 		hp_mul10(&low);
+
+		if(a++ > 50);
 	}
 
 	*buf = '\0';
@@ -138,7 +266,7 @@ int16_t errol3_dtoa(double val, char *buf)
 
 static void hp_normalize(struct hp_t *hp)
 {
-	double val = hp->val;
+	fpnum_t val = hp->val;
 
 	hp->val += hp->off;
 	hp->off += val - hp->val;
@@ -151,7 +279,7 @@ static void hp_normalize(struct hp_t *hp)
 
 static void hp_mul10(struct hp_t *hp)
 {
-	double off, val = hp->val;
+	fpnum_t off, val = hp->val;
 
 	hp->val *= 10.0;
 	hp->off *= 10.0;
@@ -185,25 +313,56 @@ static void hp_div10(struct hp_t *hp)
 	hp_normalize(hp);
 }
 
-
 /**
- * Retrieve the next representable floating-point number.
- *   @val: The value.
- *   &returns: The next value.
+ * Multiply the high-precision number by an arbitrary value.
+ *   @in: The high-precision input.
+ *   @val: The native input.
+ *   &returns: The high-precision output.
  */
 
-static double fp_next(double val)
+static struct hp_t hp_prod(struct hp_t in, double val)
 {
-	return nextafter(val, INFINITY);
+	int exp;
+	double comp, err, frac;
+	struct hp_t out;
+
+	out.val = in.val * val;
+
+	err = out.val;
+	frac = frexp(val, &exp);
+	comp = ldexp(in.val, exp);
+	while(frac != 0.0) {
+		if(frac >= 1.0) {
+			frac -= 1.0;
+			err -= comp;
+		}
+
+		comp /= 2.0;
+		frac *= 2.0;
+	}
+
+	out.off = val * in.off - err;
+	hp_normalize(&out);
+
+	return out;
 }
 
-/**
- * Retrieve the previous representable floating-point number.
- *   @val: The value.
- *   &returns: The next value.
- */
-
-static double fp_prev(double val)
+void split(double val, double *hi, double *lo)
 {
-	return nextafter(val, -INFINITY);
+	double t = (134217728.0 + 1) * val;
+
+	*hi = t - (t - val);
+	*lo = val - *hi;
+}
+
+struct hp_t hp_prod2(struct hp_t in, double val)
+{
+	double p, hi, lo, e;
+
+	split(in.val, &hi, &lo);
+
+	p = in.val * val;
+	e = (hi * val - p) + lo * val;
+
+	return (struct hp_t){ p, in.off * val + e };
 }
