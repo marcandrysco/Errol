@@ -15,8 +15,9 @@ extern "C" {
  * errol function declarations
  */
 
+int16_t errol0_dtoa(double val, char *buf);
 int16_t errol1_dtoa(double val, char *buf, bool *opt);
-int16_t errol2_dtoa(double val, char *buf);
+int16_t errol2_dtoa(double val, char *buf, bool *opt);
 int16_t errol3_dtoa(double val, char *buf);
 
 #ifdef __cplusplus
