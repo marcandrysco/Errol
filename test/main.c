@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/time.h>
 #include "../lib/errol.h"
@@ -480,6 +481,7 @@ int main(int argc, char **argv)
 	}
 
 	if(perf > 0) {
+		uint32_t seed = time(NULL);
 		uint32_t dragon4 = 0, grisu3 = 0, errol3 = 0, adj3 = 0;
 
 #define N	100
@@ -490,7 +492,7 @@ int main(int argc, char **argv)
 		unsigned int i, j;
 
 		for(j = 0; j < N; j++) {
-			srand(10);
+			srand(seed);
 			for(i = 0; i < perf; i++) {
 				double val;
 				bool suc;
@@ -509,7 +511,7 @@ int main(int argc, char **argv)
 			}
 		}
 
-		srand(10);
+		srand(seed);
 
 		for(i = 0; i < perf; i++) {
 			double val = rndval();
@@ -532,11 +534,19 @@ int main(int argc, char **argv)
 			grisu3 += grisu3tm /= Nsize;
 			adj3 += adj3tm /= Nsize;
 
-
 			fprintf(stderr, "%.18e\t%u\t%u\t%u\t%u\n", val, errol3tm, grisu3tm, dragon4tm, adj3tm);
 		}
 
-		printf("\x1b[G\x1b[KBenchmarking done, Errol1 %u (%.2f, %.2f), Grisu3 %u, Grisu3adj %u\n", errol3, (double)grisu3 / (double)errol3, (double)adj3 / (double)errol3, grisu3, adj3);
+		printf("\x1b[G\x1b[KBenchmarking done,\n");
+		printf("==== Absolute Results ====\n");
+		printf("Errol3            %u cycles\n", errol3 / perf);
+		printf("Grisu3            %u cycles\n", grisu3 / perf);
+		printf("Dragon4           %u cycles\n", dragon4 / perf);
+		printf("Grisu3 w/fallback %u cycles\n", adj3 / perf);
+		printf("==== Relative Speedup of Errol ====\n");
+		printf("Grisu3            %.2fx\n", (double)grisu3 / (double)errol3);
+		printf("Dragon4           %.2fx\n", (double)dragon4 / (double)errol3);
+		printf("Grisu3 w/fallback %.2fx\n", (double)adj3 / (double)errol3);
 	}
 
 	if(errenum) {
@@ -554,8 +564,6 @@ int main(int argc, char **argv)
 
 		for(e = -1074; e < 1023; e++) {
 			unsigned int p = 52;
-
-			if(e != -12) continue;
 
 			if(e < 53) {
 				// n = ⌊(e+1)log10(2)⌋ 
@@ -707,7 +715,7 @@ int main(int argc, char **argv)
 						sscanf(buf, "%lf", &flt);
 						if(!errol3_check(flt))
 							fprintf(file, "%.17g\n", flt),
-								printf("%u:%.17g!!!!\n", i, flt);
+							printf("%u:%.17g!!!!\n", i, flt);
 
 						mpz_ui_pow_ui(t, 2, e-p);
 						mpz_add(v, v, t);
@@ -715,16 +723,16 @@ int main(int argc, char **argv)
 						sscanf(buf, "%lf", &flt);
 						if(!errol3_check(flt))
 							fprintf(file, "%.17g\n", flt),
-								printf("%u:%.17g!!!!\n", i, flt);
+							printf("%u:%.17g!!!!\n", i, flt);
 					}
 
 					fclose(file);
 					list_destroy(&fnd);
 				}
-			}
 
-			list_destroy(&up);
-			list_destroy(&down);
+				list_destroy(&up);
+				list_destroy(&down);
+			}
 		}
 
 		mpz_clears(delta, alpha, tau, v, t, NULL);

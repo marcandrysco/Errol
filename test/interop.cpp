@@ -207,6 +207,26 @@ extern "C" bool errol1_check(double val, bool *suc, bool *opt)
 }
 
 /**
+ * Check Errol2 decimal to string convesion.
+ *   @val: The value.
+ *   &returns: True if conversion is correct, false otherwise.
+ */
+
+extern "C" bool errol2_check(double val)
+{
+	bool opt;
+	double chk;
+	int32_t exp;
+	char buf[100], fmt[100];
+
+	exp = errol2_dtoa(val, buf, &opt);
+	sprintf(fmt, "0.%se%d", buf, exp);
+	sscanf(fmt, "%lf", &chk);
+
+	return opt;
+}
+
+/**
  * Check Errol1 decimal to string convesion.
  *   @val: The value.
  *   &returns: True if conversion is correct, false otherwise.
