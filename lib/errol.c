@@ -1,3 +1,4 @@
+#include <float.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -151,6 +152,11 @@ int16_t errol1_dtoa(double val, char *buf, bool *opt)
 	int e;
 	int16_t exp;
 	struct hp_t mid, inhi, inlo, outhi, outlo;
+
+	if(val == DBL_MAX) {
+		strcpy(buf, "17976931348623157");
+		return 309;
+	}
 
 	ten = 1.0;
 	exp = 1;

@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <float.h>
 #include <limits.h>
 #include <math.h>
 #include <stdbool.h>
@@ -151,7 +152,7 @@ static int intsort(const void *left, const void *right);
 
 int main(int argc, char **argv)
 {
-	bool quiet = false, errenum = false;
+	bool quiet = false, errenum = false, edge1 = false, edge3 = false;
 	unsigned long val;
 	unsigned int i, fuzz0 = 0, fuzz1 = 0, fuzz3 = 0;
 	unsigned int bench1 = 0, bench2 = 0, bench3 = 0, perf = 0;
@@ -172,6 +173,10 @@ int main(int argc, char **argv)
 			}
 			else if(opt_long(&arg, "enum", NULL))
 				errenum = true;
+			else if(opt_long(&arg, "edge1", NULL))
+				edge1 = true;
+			else if(opt_long(&arg, "edge3", NULL))
+				edge3 = true;
 			else if(opt_long(&arg, "fuzz0", &value)) {
 				errno = 0;
 				val = strtol(value, &endptr, 0);
@@ -289,6 +294,99 @@ int main(int argc, char **argv)
 		}
 		else
 			fprintf(stderr, "Invalid option '%s'.\n", *arg), abort();
+	}
+
+	if(edge1 > 0) {
+		int exp;
+		char buf[32], fmt[32];
+		double chk;
+		bool opt;
+
+		exp = errol1_dtoa(DBL_MAX, buf, &opt);
+		sprintf(fmt, "0.%se%d", buf, exp);
+		sscanf(fmt, "%lf", &chk);
+
+		if(chk != DBL_MAX) {
+			if(!quiet)
+				fprintf(stderr, "\x1b[G\x1b[KConversion failed. Expected %.17e. Actual %.17e.\n", DBL_MAX, chk);
+		}
+
+		if(strlen(buf) != dragon4_len(DBL_MAX)) {
+			char dbuf[32];
+			int dexp;
+
+			dexp = dragon4_proc(val, dbuf);
+
+			if(!quiet)
+				fprintf(stderr, "\x1b[G\x1b[KOptimaily check failed. Expected 0.%se%d, Actual %se%d.\n", dbuf, dexp, buf, exp);
+		}
+
+		exp = errol1_dtoa(DBL_MIN, buf, &opt);
+		sprintf(fmt, "0.%se%d", buf, exp);
+		sscanf(fmt, "%lf", &chk);
+
+		if(chk != DBL_MIN) {
+			if(!quiet)
+				fprintf(stderr, "\x1b[G\x1b[KConversion failed. Expected %.17e. Actual %.17e.\n", DBL_MIN, chk);
+		}
+
+		if(strlen(buf) != dragon4_len(DBL_MIN)) {
+			char dbuf[32];
+			int dexp;
+
+			dexp = dragon4_proc(val, dbuf);
+
+			if(!quiet)
+				fprintf(stderr, "\x1b[G\x1b[KOptimaily check failed. Expected 0.%se%d, Actual %se%d.\n", dbuf, dexp, buf, exp);
+		}
+
+		printf("\x1b[G\x1b[KTesting Errol1 edge cases done.\n");
+	}
+
+	if(edge3 > 0) {
+		int exp;
+		char buf[32], fmt[32];
+		double chk;
+
+		exp = errol3_dtoa(DBL_MAX, buf);
+		sprintf(fmt, "0.%se%d", buf, exp);
+		sscanf(fmt, "%lf", &chk);
+
+		if(chk != DBL_MAX) {
+			if(!quiet)
+				fprintf(stderr, "\x1b[G\x1b[KConversion failed. Expected %.17e. Actual %.17e.\n", DBL_MAX, chk);
+		}
+
+		if(strlen(buf) != dragon4_len(DBL_MAX)) {
+			char dbuf[32];
+			int dexp;
+
+			dexp = dragon4_proc(val, dbuf);
+
+			if(!quiet)
+				fprintf(stderr, "\x1b[G\x1b[KOptimaily check failed. Expected 0.%se%d, Actual %se%d.\n", dbuf, dexp, buf, exp);
+		}
+
+		exp = errol3_dtoa(DBL_MIN, buf);
+		sprintf(fmt, "0.%se%d", buf, exp);
+		sscanf(fmt, "%lf", &chk);
+
+		if(chk != DBL_MIN) {
+			if(!quiet)
+				fprintf(stderr, "\x1b[G\x1b[KConversion failed. Expected %.17e. Actual %.17e.\n", DBL_MIN, chk);
+		}
+
+		if(strlen(buf) != dragon4_len(DBL_MIN)) {
+			char dbuf[32];
+			int dexp;
+
+			dexp = dragon4_proc(val, dbuf);
+
+			if(!quiet)
+				fprintf(stderr, "\x1b[G\x1b[KOptimaily check failed. Expected 0.%se%d, Actual %se%d.\n", dbuf, dexp, buf, exp);
+		}
+
+		printf("\x1b[G\x1b[KTesting Errol3 edge cases done.\n");
 	}
 
 	if(fuzz0 > 0) {
