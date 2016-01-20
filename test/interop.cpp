@@ -20,8 +20,8 @@ static inline uint64_t rdtsc()
 {
 	uint32_t a, d;
 
-	__asm__ __volatile__("cpuid;"
-			"rdtsc;"
+	__asm__ __volatile__(
+			"rdtscp;"
 			: "=a" (a), "=d" (d)
 			:
 			: "%rcx", "%rbx", "memory");
