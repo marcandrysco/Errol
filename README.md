@@ -1,4 +1,4 @@
-## Performance Evaluation Corretion
+## Performance Evaluation Correction
 
 Our original evaluation of Errol against the prior work of Grisu3 was
 erroneous. The evaluation indicates a 2x speed improvement over Grisu3.
