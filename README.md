@@ -21,8 +21,7 @@ there were no visible errors that would hint at a problem.
 The mistake was discovered when Florian Loitsch, author of the Grisu3
 algorithm, attempted to replicate our results. He alerted us to the
 discrepancy, and we immediately confirmed the corrected results. We then
-informed the POPL PC chair, Rupak Majumdar, of the mistake, and the PC chair
-advised us to create a page like this one and update the PDF paper and
-corresponding talk.
+informed the POPL PC chair of the mistake, and the PC chair advised us to
+create a page like this one and update the PDF paper and corresponding talk.
 
 An updated version of the paper will be made available shortly.
