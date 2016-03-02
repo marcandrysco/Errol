@@ -8,8 +8,8 @@ LDFLAGS = -lm -L../lib -L../grisu -static -lerrol -ldouble-conversion -lm -lgmp
 AR      = ar rcs
 
 BIN  = errol-test
-OBJ  = main.o interop.o dragon4.o
-SRC  = main.c interop.cpp dragon4.c
+OBJ  = main.o proof.o interop.o dragon4.o
+SRC  = main.c proof.c interop.cpp dragon4.c
 INC  = dragon4.h
 DEP  = ../lib/liberrol.so
 DIST = Makefile $(SRC) $(INC)
@@ -24,6 +24,9 @@ $(BIN): $(OBJ)
 	$(LD) $^ -o $@ $(LDFLAGS)
 
 main.o: main.c Makefile $(INC) $(DEP)
+	$(CC) -c $< -o $@ $(CFLAGS)
+
+proof.o: proof.c Makefile $(INC) $(DEP)
 	$(CC) -c $< -o $@ $(CFLAGS)
 
 interop.o: interop.cpp Makefile $(INC) $(DEP)

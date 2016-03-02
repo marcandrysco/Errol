@@ -2,7 +2,7 @@
 
 CC      = gcc
 LD      = gcc
-CFLAGS  = -g -O2 -Wall -Werror -fpic
+CFLAGS  = -g -O3 -Wall -Werror -fpic
 LDFLAGS = -lm
 AR      = ar rcs
 
@@ -10,7 +10,7 @@ LIB  = liberrol.a
 DYN  = liberrol.so
 OBJ  = errol.o
 SRC  = errol.c
-INC  = errol.h lookup.h err.h
+INC  = errol.h lookup.h enum3.h enum4.h
 DIST = Makefile $(SRC) $(INC)
 VER  = 1.0
 PKG  = errol

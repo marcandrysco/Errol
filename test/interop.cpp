@@ -56,6 +56,26 @@ extern "C" uint32_t grisu_bench(double val, bool *suc)
 	return tm;
 }
 
+/**
+ * Benchmark decimal to string using Grisu.
+ *   @val: The value.
+ *   @suc: The success flag.
+ *   &returns: The number of cycles.
+ */
+
+extern "C" int grisu3_proc(double val, char *buf, bool *suc)
+{
+	bool chk;
+	Vector<char> buffer(buf, 100);
+	int length, point;
+
+	chk = FastDtoa(val, FAST_DTOA_SHORTEST, 0, buffer, &length, &point);
+	if(suc)
+		*suc = chk;
+
+	return point;
+}
+
 
 /**
  * Benchmark decimal to string using Dragon4.
@@ -89,7 +109,7 @@ extern "C" uint32_t dragon4_bench(double val, bool *suc)
  *   &returns: The exponent.
  */
 
-extern "C" int32_t dragon4_proc(double val, char *buf)
+extern "C" int dragon4_proc(double val, char *buf)
 {
 	char *str;
 	int pt, sign;
@@ -118,129 +138,128 @@ extern "C" uint32_t dragon4_len(double val)
 
 
 /**
- * Benchmark Errol1 decimal to string conversion.
+ * Check Errol.
+ *   @n: The version.
+ *   @val: The value.
+ *   &returns: True if correct, false otherwise.
+ */
+
+extern "C" bool errolN_check(unsigned int n, double val)
+{
+	bool opt;
+	char errol[32], dragon[32];
+
+	switch(n) {
+	case 0: errol1_dtoa(val, errol, &opt); break;
+	case 1: errol1_dtoa(val, errol, &opt); break;
+	case 2: errol2_dtoa(val, errol, &opt); break;
+	case 3: errol3_dtoa(val, errol); break;
+	case 4: errol4_dtoa(val, errol); break;
+	}
+
+	dragon4_proc(val, dragon);
+
+	return strcmp(errol, dragon) == 0;
+}
+
+/**
+ * Check uncorrected Errol.
+ *   @n: The version.
+ *   @val: The value.
+ *   &returns: True if correct, false otherwise.
+ */
+
+extern "C" bool errolNu_check(unsigned int n, double val)
+{
+	char errol[32], dragon[32];
+
+	switch(n) {
+	case 3: errol3u_dtoa(val, errol); break;
+	case 4: errol4u_dtoa(val, errol); break;
+	}
+
+	dragon4_proc(val, dragon);
+
+	return strcmp(errol, dragon) == 0;
+}
+
+/**
+ * Process Errol.
+ *   @n: The version.
+ *   @val: The value.
+ *   @buf: The output buffer.
+ *   @opt: The optimality flag.
+ *   &returns: The exponent.
+ */
+
+extern "C" int errolN_proc(unsigned int n, double val, char *buf, bool *opt)
+{
+	*opt = true;
+
+	switch(n) {
+	case 0: return errol1_dtoa(val, buf, opt);
+	case 1: return errol1_dtoa(val, buf, opt);
+	case 2: return errol2_dtoa(val, buf, opt);
+	case 3: return errol3_dtoa(val, buf);
+	case 4: return errol4_dtoa(val, buf);
+	}
+
+	assert(false);
+
+	return 0;
+}
+
+/**
+ * Benchmark Errol.
  *   @val: The value.
  *   @suc: The success flag.
  *   &returns: The number of cycles.
  */
 
-extern "C" uint32_t errol1_bench(double val, bool *suc)
+extern "C" uint32_t errolN_bench(unsigned int n, double val, bool *suc)
 {
 	uint64_t tm;
-	bool opt;
 	char buf[100];
+	bool opt = true;
 
-	tm = rdtsc();
-	errol1_dtoa(val, buf, &opt);
-	tm = rdtsc() - tm;
+	switch(n) {
+	case 0:
+		tm = rdtsc();
+		errol0_dtoa(val, buf);
+		tm = rdtsc() - tm;
+		break;
+
+	case 1:
+		tm = rdtsc();
+		errol1_dtoa(val, buf, &opt);
+		tm = rdtsc() - tm;
+		break;
+
+	case 2:
+		tm = rdtsc();
+		errol2_dtoa(val, buf, &opt);
+		tm = rdtsc() - tm;
+		break;
+
+	case 3:
+		tm = rdtsc();
+		errol3_dtoa(val, buf);
+		tm = rdtsc() - tm;
+		break;
+
+	case 4:
+		tm = rdtsc();
+		errol4_dtoa(val, buf);
+		tm = rdtsc() - tm;
+		break;
+
+	default:
+		assert(true);
+		tm = 0;
+	}
 
 	if(suc)
 		*suc = opt;
 
 	return tm;
-}
-
-/**
- * Benchmark Errol2 decimal to string conversion.
- *   @val: The value.
- *   @suc: The success flag.
- *   &returns: The number of cycles.
- */
-
-extern "C" uint32_t errol2_bench(double val, bool *suc)
-{
-	uint64_t tm;
-	bool opt;
-	char buf[100];
-
-	tm = rdtsc();
-	errol2_dtoa(val, buf, &opt);
-	tm = rdtsc() - tm;
-
-	if(suc)
-		*suc = opt;
-
-	return tm;
-}
-
-/**
- * Benchmark Errol3 decimal to string conversion.
- *   @val: The value.
- *   @suc: The success flag.
- *   &returns: The number of cycles.
- */
-
-extern "C" uint32_t errol3_bench(double val, bool *suc)
-{
-	uint64_t tm;
-	char buf[100];
-
-	tm = rdtsc();
-	errol3_dtoa(val, buf);
-	tm = rdtsc() - tm;
-
-	if(suc)
-		*suc = true;
-
-	return tm;
-}
-
-/**
- * Check Errol1 decimal to string convesion.
- *   @val: The value.
- *   @suc: The success flag. Set if the algorithm indicates optimal output.
- *   @opt: The optimality flag. Set if the output is optimal.
- *   &returns: True if conversion is correct, false otherwise.
- */
-
-extern "C" bool errol1_check(double val, bool *suc, bool *opt)
-{
-	double chk;
-	int32_t exp;
-	char buf[100], fmt[100];
-
-	exp = errol1_dtoa(val, buf, opt);
-	sprintf(fmt, "0.%se%d", buf, exp);
-	sscanf(fmt, "%lf", &chk);
-
-	return opt;
-}
-
-/**
- * Check Errol2 decimal to string convesion.
- *   @val: The value.
- *   &returns: True if conversion is correct, false otherwise.
- */
-
-extern "C" bool errol2_check(double val)
-{
-	bool opt;
-	double chk;
-	int32_t exp;
-	char buf[100], fmt[100];
-
-	exp = errol2_dtoa(val, buf, &opt);
-	sprintf(fmt, "0.%se%d", buf, exp);
-	sscanf(fmt, "%lf", &chk);
-
-	return opt;
-}
-
-/**
- * Check Errol1 decimal to string convesion.
- *   @val: The value.
- *   &returns: True if conversion is correct, false otherwise.
- */
-
-extern "C" bool errol3_check(double val)
-{
-	double chk;
-	int32_t exp;
-	char buf[100], fmt[100];
-
-	exp = errol3_dtoa(val, buf);
-	sprintf(fmt, "0.%se%d", buf, exp);
-	sscanf(fmt, "%lf", &chk);
-
-	return val == chk;
 }

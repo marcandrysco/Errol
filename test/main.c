@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <errno.h>
 #include <float.h>
 #include <limits.h>
@@ -13,134 +14,43 @@
 #include <gmp.h>
 
 
-#define DEBUG 0
-#define ERRPATH "err.list"
-
-
-struct shift_t {
-	uint64_t idx;
-	mpz_t val;
-};
-
-struct list_t {
-	struct shift_t *arr;
-	unsigned int len;
-};
-
-
-struct list_t list_init(void)
-{
-	return (struct list_t){ malloc(0), 0 };
-}
-
-void list_destroy(struct list_t *list)
-{
-	unsigned int i;
-
-	for(i = 0; i < list->len; i++)
-		mpz_clear(list->arr[i].val);
-
-	free(list->arr);
-}
-
-/**
- * Add a shift to the list.
- *   @list: The list.
- *   @idx: The index.
- *   @val: The value.
- */
-
-void list_add(struct list_t *list, uint64_t idx, mpz_t val)
-{
-	unsigned int n = list->len++;
-
-	list->arr = realloc(list->arr, list->len * sizeof(struct shift_t));
-	list->arr[n].idx = idx;
-	mpz_init_set(list->arr[n].val, val);
-}
-
-/**
- * Retrieve the last shift from the list.
- *   @list: The list.
- *   &returns: The last shift.
- */
-
-struct shift_t *list_last(struct list_t *list)
-{
-	return &list->arr[list->len - 1];
-}
-
-bool list_contains(struct list_t *list, uint64_t idx)
-{
-	unsigned int i;
-
-	for(i = 0; i < list->len; i++) {
-		if(list->arr[i].idx == idx)
-			return true;
-	}
-
-	return false;
-}
-
-void list_search(uint64_t idx, mpz_t v, struct list_t *out, struct list_t *up, struct list_t *down, mpz_t delta)
-{
-	mpz_t t;
-	unsigned int i;
-
-	if(idx > 9007199254740992)
-		return;
-	if(list_contains(out, idx))
-		return;
-
-	mpz_init(t);
-
-	list_add(out, idx, v);
-
-	for(i = up->len - 1; i != UINT_MAX; i--) {
-		mpz_add(t, v, up->arr[i].val);
-		if(mpz_cmpabs(t, delta) <= 0)
-			list_search(idx + up->arr[i].idx, t, out, up, down, delta);
-		else
-			break;
-	}
-
-	for(i = down->len - 1; i != UINT_MAX; i--) {
-		mpz_add(t, v, down->arr[i].val);
-		if(mpz_cmpabs(t, delta) <= 0)
-			list_search(idx + down->arr[i].idx, t, out, up, down, delta);
-		else
-			break;
-	}
-
-	mpz_clear(t);
-}
-
-
-/*
- * interop function declarations
- */
-
-uint32_t grisu_bench(double val, bool *suc);
-
-uint32_t dragon4_bench(double val, bool *suc);
-int32_t dragon4_proc(double val, char *buf);
-uint32_t dragon4_len(double val);
-
-uint32_t errol1_bench(double val, bool *suc);
-uint32_t errol2_bench(double val, bool *suc);
-uint32_t errol3_bench(double val, bool *suc);
-bool errol3_check(double val);
-
 /*
  * local function declarations
  */
 
 static bool opt_long(char ***arg, const char *pre, char **value);
+static bool opt_num(char ***arg, const char *pre, int *num);
 
 static void rndinit();
 static double rndval();
 
 static int intsort(const void *left, const void *right);
+
+static double chk_conv(double val, const char *str, int32_t exp, bool *cor, bool *opt, bool *best);
+
+static void table_add(struct errol_err_t table[1024][4], double val);
+static void table_enum(unsigned int ver, bool bld);
+
+/*
+ * interop function declarations
+ */
+
+int grisu3_proc(double val, char *buf, bool *suc);
+uint32_t grisu_bench(double val, bool *suc);
+
+int dragon4_proc(double val, char *buf);
+uint32_t dragon4_bench(double val, bool *suc);
+
+bool errolN_check(unsigned int n, double val);
+bool errolNu_check(unsigned int n, double val);
+int errolN_proc(unsigned int n, double val, char *buf, bool *opt);
+uint32_t errolN_bench(unsigned int n, double val, bool *suc);
+
+/*
+ * proof function declarations
+ */
+
+int64_t *proof_enum(mpz_t delta, mpz_t m0, mpz_t alpha, mpz_t tau, unsigned int p);
 
 
 /**
@@ -152,442 +62,88 @@ static int intsort(const void *left, const void *right);
 
 int main(int argc, char **argv)
 {
-	bool quiet = false, errenum = false, edge1 = false, edge3 = false;
-	unsigned long val;
-	unsigned int i, fuzz0 = 0, fuzz1 = 0, fuzz3 = 0;
-	unsigned int bench1 = 0, bench2 = 0, bench3 = 0, perf = 0;
-	char **arg, *value, *endptr;
+	char **arg;
+	bool quiet = false, enum3 = false, enum4 = false, check3 = false, check4 = false;
+	int n, perf = 0, fuzz[5] = { 0, 0, 0, 0, 0 };
 
 	rndinit();
+	rndval();
 
 	for(arg = argv + 1; *arg != NULL; ) {
-		if((*arg)[0] == '-') {
-			if((*arg)[1] != '-') {
-				char *opt = *arg + 2;
-
-				while(*opt != '\0') {
-					opt++;
-				}
-
-				arg++;
-			}
-			else if(opt_long(&arg, "enum", NULL))
-				errenum = true;
-			else if(opt_long(&arg, "edge1", NULL))
-				edge1 = true;
-			else if(opt_long(&arg, "edge3", NULL))
-				edge3 = true;
-			else if(opt_long(&arg, "fuzz0", &value)) {
-				errno = 0;
-				val = strtol(value, &endptr, 0);
-
-				if((*endptr == 'k') || (*endptr == 'K'))
-					val *= 1000, endptr++;
-				else if((*endptr == 'm') || (*endptr == 'M'))
-					val *= 1000000, endptr++;
-
-				if(((val == 0) && (errno != 0)) || (*endptr != '\0'))
-					fprintf(stderr, "Invalid fuzz0 parameter '%s'.\n", value), abort();
-				else if(val > UINT_MAX)
-					fprintf(stderr, "Number too large '%s'.\n", value);
-
-				fuzz0 = val;
-			}
-			else if(opt_long(&arg, "fuzz1", &value)) {
-				errno = 0;
-				val = strtol(value, &endptr, 0);
-
-				if((*endptr == 'k') || (*endptr == 'K'))
-					val *= 1000, endptr++;
-				else if((*endptr == 'm') || (*endptr == 'M'))
-					val *= 1000000, endptr++;
-
-				if(((val == 0) && (errno != 0)) || (*endptr != '\0'))
-					fprintf(stderr, "Invalid fuzz1 parameter '%s'.\n", value), abort();
-				else if(val > UINT_MAX)
-					fprintf(stderr, "Number too large '%s'.\n", value);
-
-				fuzz1 = val;
-			}
-			else if(opt_long(&arg, "fuzz3", &value)) {
-				errno = 0;
-				val = strtol(value, &endptr, 0);
-
-				if((*endptr == 'k') || (*endptr == 'K'))
-					val *= 1000, endptr++;
-				else if((*endptr == 'm') || (*endptr == 'M'))
-					val *= 1000000, endptr++;
-
-				if(((val == 0) && (errno != 0)) || (*endptr != '\0'))
-					fprintf(stderr, "Invalid fuzz1 parameter '%s'.\n", value), abort();
-				else if(val > UINT_MAX)
-					fprintf(stderr, "Number too large '%s'.\n", value);
-
-				fuzz3 = val;
-			}
-			else if(opt_long(&arg, "bench1", &value)) {
-				errno = 0;
-				val = strtol(value, &endptr, 0);
-
-				if((*endptr == 'k') || (*endptr == 'K'))
-					val *= 1000, endptr++;
-				else if((*endptr == 'm') || (*endptr == 'M'))
-					val *= 1000000, endptr++;
-
-				if(((val == 0) && (errno != 0)) || (*endptr != '\0'))
-					fprintf(stderr, "Invalid bench parameter '%s'.\n", value), abort();
-				else if(val > UINT_MAX)
-					fprintf(stderr, "Number too large '%s'.\n", value);
-
-				bench1 = val;
-			}
-			else if(opt_long(&arg, "bench2", &value)) {
-				errno = 0;
-				val = strtol(value, &endptr, 0);
-
-				if((*endptr == 'k') || (*endptr == 'K'))
-					val *= 1000, endptr++;
-				else if((*endptr == 'm') || (*endptr == 'M'))
-					val *= 1000000, endptr++;
-
-				if(((val == 0) && (errno != 0)) || (*endptr != '\0'))
-					fprintf(stderr, "Invalid bench parameter '%s'.\n", value), abort();
-				else if(val > UINT_MAX)
-					fprintf(stderr, "Number too large '%s'.\n", value);
-
-				bench2 = val;
-			}
-			else if(opt_long(&arg, "bench3", &value)) {
-				errno = 0;
-				val = strtol(value, &endptr, 0);
-
-				if((*endptr == 'k') || (*endptr == 'K'))
-					val *= 1000, endptr++;
-				else if((*endptr == 'm') || (*endptr == 'M'))
-					val *= 1000000, endptr++;
-
-				if(((val == 0) && (errno != 0)) || (*endptr != '\0'))
-					fprintf(stderr, "Invalid bench parameter '%s'.\n", value), abort();
-				else if(val > UINT_MAX)
-					fprintf(stderr, "Number too large '%s'.\n", value);
-
-				bench3 = val;
-			}
-			else if(opt_long(&arg, "perf", &value)) {
-				errno = 0;
-				val = strtol(value, &endptr, 0);
-
-				if((*endptr == 'k') || (*endptr == 'K'))
-					val *= 1000, endptr++;
-				else if((*endptr == 'm') || (*endptr == 'M'))
-					val *= 1000000, endptr++;
-
-				if(((val == 0) && (errno != 0)) || (*endptr != '\0'))
-					fprintf(stderr, "Invalid bench parameter '%s'.\n", value), abort();
-				else if(val > UINT_MAX)
-					fprintf(stderr, "Number too large '%s'.\n", value);
-
-				perf = val;
-			}
-			else
-				fprintf(stderr, "Invalid option '%s'.\n", *arg), abort();
-		}
+		if(opt_num(&arg, "fuzz0", &n))
+			fuzz[0] = n;
+		else if(opt_num(&arg, "fuzz1", &n))
+			fuzz[1] = n;
+		else if(opt_num(&arg, "fuzz2", &n))
+			fuzz[3] = n;
+		else if(opt_num(&arg, "fuzz3", &n))
+			fuzz[3] = n;
+		else if(opt_num(&arg, "fuzz4", &n))
+			fuzz[4] = n;
+		else if(opt_num(&arg, "perf", &n))
+			perf = n;
+		else if(opt_long(&arg, "enum3", NULL))
+			enum3 = true;
+		else if(opt_long(&arg, "enum4", NULL))
+			enum4 = true;
+		else if(opt_long(&arg, "check3", NULL))
+			check3 = true;
+		else if(opt_long(&arg, "check4", NULL))
+			check4 = true;
 		else
 			fprintf(stderr, "Invalid option '%s'.\n", *arg), abort();
 	}
 
-	if(edge1 > 0) {
-		int exp;
-		char buf[32], fmt[32];
-		double chk;
-		bool opt;
+	for(n = 0; n < 5; n++) {
+		unsigned int i, nfail = 0, subopt = 0, notbest = 0;
 
-		exp = errol1_dtoa(DBL_MAX, buf, &opt);
-		sprintf(fmt, "0.%se%d", buf, exp);
-		sscanf(fmt, "%lf", &chk);
+		if(fuzz[n] == 0)
+			continue;
 
-		if(chk != DBL_MAX) {
-			if(!quiet)
-				fprintf(stderr, "\x1b[G\x1b[KConversion failed. Expected %.17e. Actual %.17e.\n", DBL_MAX, chk);
-		}
-
-		if(strlen(buf) != dragon4_len(DBL_MAX)) {
-			char dbuf[32];
-			int dexp;
-
-			dexp = dragon4_proc(val, dbuf);
-
-			if(!quiet)
-				fprintf(stderr, "\x1b[G\x1b[KOptimaily check failed. Expected 0.%se%d, Actual %se%d.\n", dbuf, dexp, buf, exp);
-		}
-
-		exp = errol1_dtoa(DBL_MIN, buf, &opt);
-		sprintf(fmt, "0.%se%d", buf, exp);
-		sscanf(fmt, "%lf", &chk);
-
-		if(chk != DBL_MIN) {
-			if(!quiet)
-				fprintf(stderr, "\x1b[G\x1b[KConversion failed. Expected %.17e. Actual %.17e.\n", DBL_MIN, chk);
-		}
-
-		if(strlen(buf) != dragon4_len(DBL_MIN)) {
-			char dbuf[32];
-			int dexp;
-
-			dexp = dragon4_proc(val, dbuf);
-
-			if(!quiet)
-				fprintf(stderr, "\x1b[G\x1b[KOptimaily check failed. Expected 0.%se%d, Actual %se%d.\n", dbuf, dexp, buf, exp);
-		}
-
-		printf("\x1b[G\x1b[KTesting Errol1 edge cases done.\n");
-	}
-
-	if(edge3 > 0) {
-		int exp;
-		char buf[32], fmt[32];
-		double chk;
-
-		exp = errol3_dtoa(DBL_MAX, buf);
-		sprintf(fmt, "0.%se%d", buf, exp);
-		sscanf(fmt, "%lf", &chk);
-
-		if(chk != DBL_MAX) {
-			if(!quiet)
-				fprintf(stderr, "\x1b[G\x1b[KConversion failed. Expected %.17e. Actual %.17e.\n", DBL_MAX, chk);
-		}
-
-		if(strlen(buf) != dragon4_len(DBL_MAX)) {
-			char dbuf[32];
-			int dexp;
-
-			dexp = dragon4_proc(val, dbuf);
-
-			if(!quiet)
-				fprintf(stderr, "\x1b[G\x1b[KOptimaily check failed. Expected 0.%se%d, Actual %se%d.\n", dbuf, dexp, buf, exp);
-		}
-
-		exp = errol3_dtoa(DBL_MIN, buf);
-		sprintf(fmt, "0.%se%d", buf, exp);
-		sscanf(fmt, "%lf", &chk);
-
-		if(chk != DBL_MIN) {
-			if(!quiet)
-				fprintf(stderr, "\x1b[G\x1b[KConversion failed. Expected %.17e. Actual %.17e.\n", DBL_MIN, chk);
-		}
-
-		if(strlen(buf) != dragon4_len(DBL_MIN)) {
-			char dbuf[32];
-			int dexp;
-
-			dexp = dragon4_proc(val, dbuf);
-
-			if(!quiet)
-				fprintf(stderr, "\x1b[G\x1b[KOptimaily check failed. Expected 0.%se%d, Actual %se%d.\n", dbuf, dexp, buf, exp);
-		}
-
-		printf("\x1b[G\x1b[KTesting Errol3 edge cases done.\n");
-	}
-
-	if(fuzz0 > 0) {
-		unsigned int nfail = 0, subopt = 0;
-
-		for(i = 0; i < fuzz0; i++) {
+		for(i = 0; i < fuzz[n]; i++) {
 			int exp;
-			char buf[32], fmt[32];
+			char str[32];
 			double val, chk;
+			bool cor, opt, best;
 
 			if((i % 1000) == 0) {
-				printf("\x1b[G\x1b[KFuzzing Errol0... %uk/%uk %2.2f%%", i / 1000, fuzz0 / 1000, 100.0 * (double)i / (double)fuzz0);
+				printf("\x1b[G\x1b[KFuzzing Errol%u... %uk/%uk %2.2f%%", n, i / 1000, fuzz[n] / 1000, 100.0 * (double)i / (double)fuzz[n]);
 				fflush(stdout);
 			}
 
 			val = rndval();
-			exp = errol0_dtoa(val, buf);
-			sprintf(fmt, "0.%se%d", buf, exp);
-			sscanf(fmt, "%lf", &chk);
+			exp = errolN_proc(n, val, str, &opt);
+			chk = chk_conv(val, str, exp, &cor, &opt, &best);
 
-			if(chk != val) {
-				nfail++;
+			nfail += (cor ? 0 : 1);
+			subopt += (opt ? 0 : 1);
+			notbest += (best ? 0 : 1);
 
-				if(!quiet)
-					fprintf(stderr, "Conversion failed. Expected %.17e. Actual %.17e.\n", val, chk);
-			}
+			if(!best && !quiet) {
+				int dragon4exp;
+				char dragon4str[128];
 
-			if(strlen(buf) != dragon4_len(val))
-				subopt++;
-		}
-
-		printf("\x1b[G\x1b[KFuzzing Errol0 done on %u numbers, %u failures (%.3f%%), %u suboptimal (%.3f%%)\n", fuzz0, nfail, 100.0 * (double)nfail / (double)fuzz0, subopt, 100.0 * (double)subopt / (double)fuzz0);
-	}
-
-	if(fuzz1 > 0) {
-		unsigned int nfail = 0, subopt = 0;
-
-		for(i = 0; i < fuzz1; i++) {
-			int exp;
-			char buf[32], fmt[32];
-			double val, chk;
-			bool opt;
-
-			if((i % 1000) == 0) {
-				printf("\x1b[G\x1b[KFuzzing Errol1... %uk/%uk %2.2f%%", i / 1000, fuzz1 / 1000, 100.0 * (double)i / (double)fuzz1);
-				fflush(stdout);
-			}
-
-			val = rndval();
-			exp = errol1_dtoa(val, buf, &opt);
-			sprintf(fmt, "0.%se%d", buf, exp);
-			sscanf(fmt, "%lf", &chk);
-
-			if(chk != val) {
-				nfail++;
-
-				if(!quiet)
-					fprintf(stderr, "\x1b[G\x1b[KConversion failed. Expected %.17e. Actual %.17e.\n", val, chk);
-			}
-
-			if(strlen(buf) != dragon4_len(val)) {
-				if(opt) {
-					nfail++;
-
-					if(!quiet)
-						fprintf(stderr, "\x1b[G\x1b[KOptimaily check failed. Value %.17e.\n", chk);
-				}
-
-				subopt++;
+				dragon4exp = dragon4_proc(val, dragon4str);
+				fprintf(stderr, "Conversion failed. Expected 0.%se%d. Actual 0.%se%d. Read as %.17e.\n", dragon4str, dragon4exp, str, exp, chk);
 			}
 		}
 
-		printf("\x1b[G\x1b[KFuzzing Errol1 done on %u numbers, %u failures (%.3f%%), %u suboptimal (%.3f%%)\n", fuzz1, nfail, 100.0 * (double)nfail / (double)fuzz1, subopt, 100.0 * (double)subopt / (double)fuzz1);
-	}
-
-	if(fuzz3 > 0) {
-		unsigned int nfail = 0;
-
-		for(i = 0; i < fuzz3; i++) {
-			int exp;
-			char buf[32], fmt[32];
-			double val, chk;
-
-			if((i % 1000) == 0) {
-				printf("\x1b[G\x1b[KFuzzing Errol3... %uk/%uk %2.2f%%", i / 1000, fuzz3 / 1000, 100.0 * (double)i / (double)fuzz3);
-				fflush(stdout);
-			}
-
-			val = rndval();
-			exp = errol3_dtoa(val, buf);
-			sprintf(fmt, "0.%se%d", buf, exp);
-			sscanf(fmt, "%lf", &chk);
-
-			if(chk != val) {
-				nfail++;
-
-				if(!quiet)
-					fprintf(stderr, "\x1b[G\x1b[KConversion failed. Expected %.17e. Actual %.17e.\n", val, chk);
-			}
-
-			if(strlen(buf) != dragon4_len(val)) {
-				char dbuf[32];
-				int dexp;
-
-				nfail++;
-
-				dexp = dragon4_proc(val, dbuf);
-
-				if(!quiet)
-					fprintf(stderr, "\x1b[G\x1b[KOptimaily check failed. Expected 0.%se%d, Actual %se%d.\n", dbuf, dexp, buf, exp);
-			}
-		}
-
-		printf("\x1b[G\x1b[KFuzzing Errol1 done on %u numbers, %u failures (%.3f%%)\n", fuzz3, nfail, 100.0 * (double)nfail / (double)fuzz3);
-	}
-
-	if(bench1 > 0) {
-		uint32_t grisu = 0, errol1 = 0;
-
-		for(i = 0; i < bench1; i++) {
-			double val;
-			uint32_t tm;
-			bool suc;
-
-			if((i % 1000) == 0) {
-				printf("\x1b[G\x1b[KBenchmarking... %uk/%uk %2.2f%%", i / 1000, bench1 / 1000, 100.0 * (double)i / (double)bench1);
-				fflush(stdout);
-			}
-
-			val = rndval();
-
-			tm = grisu_bench(val, &suc);
-			grisu += tm;
-
-			tm = errol1_bench(val, &suc);
-			errol1 += tm;
-		}
-
-		printf("\x1b[G\x1b[KBenchmarking done, Errol1 %u (%.2f), Grisu3 %u\n", errol1, (double)grisu / (double)errol1, grisu);
-	}
-
-	if(bench2 > 0) {
-		uint32_t grisu = 0, errol2 = 0;
-
-		for(i = 0; i < bench2; i++) {
-			double val;
-			uint32_t tm;
-			bool suc;
-
-			if((i % 1000) == 0) {
-				printf("\x1b[G\x1b[KBenchmarking... %uk/%uk %2.2f%%", i / 1000, bench2 / 1000, 100.0 * (double)i / (double)bench2);
-				fflush(stdout);
-			}
-
-			val = rndval();
-
-			tm = grisu_bench(val, &suc);
-			grisu += tm;
-
-			tm = errol2_bench(val, &suc);
-			errol2 += tm;
-		}
-
-		printf("\x1b[G\x1b[KBenchmarking done, Errol1 %u (%.2f), Grisu3 %u\n", errol2, (double)grisu / (double)errol2, grisu);
-	}
-
-	if(bench3 > 0) {
-		uint32_t grisu3 = 0, errol3 = 0;
-
-		for(i = 0; i < bench3; i++) {
-			double val;
-			uint32_t tm;
-			bool suc;
-
-			if((i % 1000) == 0) {
-				printf("\x1b[G\x1b[KBenchmarking... %uk/%uk %2.2f%%", i / 1000, bench3 / 1000, 100.0 * (double)i / (double)bench3);
-				fflush(stdout);
-			}
-
-			val = rndval();
-
-			tm = grisu_bench(val, &suc);
-			grisu3 += tm;
-
-			tm = errol3_bench(val, &suc);
-			errol3 += tm;
-		}
-
-		printf("\x1b[G\x1b[KBenchmarking done, Errol3 %u (%.2f), Grisu3 %u\n", errol3, (double)grisu3 / (double)errol3, grisu3);
+		printf("\x1b[G\x1b[KFuzzing Errol%u done on %u numbers, %u failures (%.3f%%), %u suboptimal (%.3f%%), %u notbest (%.3f%%)\n", n, fuzz[n], nfail, 100.0 * (double)nfail / (double)fuzz[n], subopt, 100.0 * (double)subopt / (double)fuzz[n], notbest, 100.0 * (double)notbest / (double)fuzz[n]);
 	}
 
 	if(perf > 0) {
-		uint32_t seed = time(NULL);
-		uint32_t dragon4 = 0, grisu3 = 0, errol3 = 0, adj3 = 0;
-
 #define N	100
 #define Nlow	(N / 10)
 #define Nhigh	(N - Nlow)
 #define Nsize	(Nhigh - Nlow)
-		static uint32_t dragon4all[20000][N], grisu3all[20000][N], errol3all[20000][N], adj3all[20000][N];
+
+		uint32_t seed = time(NULL);
+		uint32_t dragon4 = 0, grisu3 = 0, errol[5] = { 0, 0, 0, 0, 0 }, adj3 = 0;
 		unsigned int i, j;
+		static uint32_t dragon4all[20000][N], grisu3all[20000][N], errolNall[5][20000][N], adj3all[20000][N];
+
+		if(perf > 20000)
+			fprintf(stderr, "Cannot support more than 20k performance numberss.\n"), abort();
 
 		for(j = 0; j < N; j++) {
 			srand(seed);
@@ -595,15 +151,14 @@ int main(int argc, char **argv)
 				double val;
 				bool suc;
 
-				//if((i % 100) == 0) {
-					//printf("\x1b[G\x1b[KPerformance testing... %u/%u %2.2f%%", i, perf, 100.0 * (double)i / (double)perf);
-					//fflush(stdout);
-				//}
-
 				val = rndval();
 
 				dragon4all[i][j] = dragon4_bench(val, &suc);
-				errol3all[i][j] = errol3_bench(val, &suc);
+				errolNall[0][i][j] = errolN_bench(0, val, &suc);
+				errolNall[1][i][j] = errolN_bench(1, val, &suc);
+				errolNall[2][i][j] = errolN_bench(2, val, &suc);
+				errolNall[3][i][j] = errolN_bench(3, val, &suc);
+				errolNall[4][i][j] = errolN_bench(4, val, &suc);
 				grisu3all[i][j] = grisu_bench(val, &suc);
 				adj3all[i][j] = suc ? grisu3all[i][j] : dragon4all[i][j];
 			}
@@ -613,228 +168,71 @@ int main(int argc, char **argv)
 
 		for(i = 0; i < perf; i++) {
 			double val = rndval();
-			uint32_t dragon4tm = 0, grisu3tm = 0, errol3tm = 0, adj3tm = 0;
+			uint32_t dragon4tm = 0, grisu3tm = 0, errolNtm[5] = { 0, 0, 0, 0, 0 }, adj3tm = 0;
 
 			qsort(dragon4all[i], N, sizeof(uint32_t), intsort);
-			qsort(errol3all[i], N, sizeof(uint32_t), intsort);
+			qsort(errolNall[0][i], N, sizeof(uint32_t), intsort);
+			qsort(errolNall[1][i], N, sizeof(uint32_t), intsort);
+			qsort(errolNall[2][i], N, sizeof(uint32_t), intsort);
+			qsort(errolNall[3][i], N, sizeof(uint32_t), intsort);
+			qsort(errolNall[4][i], N, sizeof(uint32_t), intsort);
 			qsort(grisu3all[i], N, sizeof(uint32_t), intsort);
 			qsort(adj3all[i], N, sizeof(uint32_t), intsort);
 
 			for(j = Nlow; j < Nhigh; j++) {
 				dragon4tm += dragon4all[i][j];
-				errol3tm += errol3all[i][j];
+				errolNtm[0] += errolNall[0][i][j];
+				errolNtm[1] += errolNall[1][i][j];
+				errolNtm[2] += errolNall[2][i][j];
+				errolNtm[3] += errolNall[3][i][j];
+				errolNtm[4] += errolNall[4][i][j];
 				grisu3tm += grisu3all[i][j];
 				adj3tm += adj3all[i][j];
 			}
 
 			dragon4 += dragon4tm /= Nsize;
-			errol3 += errol3tm /= Nsize;
+			errol[0] += errolNtm[0] /= Nsize;
+			errol[1] += errolNtm[1] /= Nsize;
+			errol[2] += errolNtm[2] /= Nsize;
+			errol[3] += errolNtm[3] /= Nsize;
+			errol[4] += errolNtm[4] /= Nsize;
 			grisu3 += grisu3tm /= Nsize;
 			adj3 += adj3tm /= Nsize;
 
-			fprintf(stderr, "%.18e\t%u\t%u\t%u\t%u\n", val, errol3tm, grisu3tm, dragon4tm, adj3tm);
+			fprintf(stderr, "%.18e\t%u\t%u\t%u\t%u\t%u\t%u\t%u\t%u\n", val, errolNtm[0], errolNtm[1], errolNtm[2], errolNtm[3], errolNtm[4], grisu3tm, dragon4tm, adj3tm);
 		}
 
 		printf("\x1b[G\x1b[KBenchmarking done,\n");
 		printf("==== Absolute Results ====\n");
-		printf("Errol3            %u cycles\n", errol3 / perf);
+		printf("Errol0            %u cycles\n", errol[0] / perf);
+		printf("Errol1            %u cycles\n", errol[1] / perf);
+		printf("Errol2            %u cycles\n", errol[2] / perf);
+		printf("Errol3            %u cycles\n", errol[3] / perf);
+		printf("Errol4            %u cycles\n", errol[4] / perf);
 		printf("Grisu3            %u cycles\n", grisu3 / perf);
 		printf("Dragon4           %u cycles\n", dragon4 / perf);
 		printf("Grisu3 w/fallback %u cycles\n", adj3 / perf);
-		printf("==== Relative Speedup of Errol ====\n");
-		printf("Grisu3            %.2fx\n", (double)grisu3 / (double)errol3);
-		printf("Dragon4           %.2fx\n", (double)dragon4 / (double)errol3);
-		printf("Grisu3 w/fallback %.2fx\n", (double)adj3 / (double)errol3);
+		printf("==== Relative Speedup of Errol3 ====\n");
+		printf("Grisu3            %.2fx\n", (double)grisu3 / (double)errol[3]);
+		printf("Dragon4           %.2fx\n", (double)dragon4 / (double)errol[3]);
+		printf("Grisu3 w/fallback %.2fx\n", (double)adj3 / (double)errol[3]);
+		printf("==== Relative Speedup of Errol4 ====\n");
+		printf("Grisu3            %.2fx\n", (double)grisu3 / (double)errol[4]);
+		printf("Dragon4           %.2fx\n", (double)dragon4 / (double)errol[4]);
+		printf("Grisu3 w/fallback %.2fx\n", (double)adj3 / (double)errol[4]);
 	}
 
-	if(errenum) {
-		int e;
-		unsigned int i, n;
-		unsigned int D = 17;
-		uint64_t idx;
-		mpz_t delta, alpha, tau, v, t;
-		struct list_t up, down;
+	if(enum3)
+		table_enum(3, true);
 
-		if(access(ERRPATH, F_OK) >= 0)
-			remove(ERRPATH);
+	if(enum4)
+		table_enum(4, true);
 
-		mpz_inits(delta, alpha, tau, v, t, NULL);
+	if(check3)
+		table_enum(3, false);
 
-		for(e = -1074; e < 1023; e++) {
-			unsigned int p = 52;
-
-			if(e < 53) {
-				// n = ⌊(e+1)log10(2)⌋ 
-				n = floor((e+1.0)*log10(2.0)) - D + 2;
-				printf("n = %u\n", n);
-			}
-			else if(e >= 128) {
-				printf("#### e = %d ####\n", e);
-
-				// n = ⌊(e+1)log10(2)⌋ 
-				n = floor((e+1.0)*log10(2.0)) - D + 2;
-				printf("n = %u\n", n);
-
-				// Δ = 2^(e-p-n) 79ϵ = 79 2^{e-2p-n)
-				mpz_ui_pow_ui(delta, 2, e - 2*p - n);
-				mpz_mul_ui(delta, delta, 79);
-				if(DEBUG) gmp_printf("delta: %Zd\n", delta);
-
-				// α = 2^(e-p-n)
-				mpz_ui_pow_ui(alpha, 2, e - p - n);
-				if(DEBUG) gmp_printf("alpha: %Zd\n", alpha);
-
-				// tau = 5^n
-				mpz_ui_pow_ui(tau, 5, n);
-				if(DEBUG) gmp_printf("tau: %Zd\n", tau);
-
-				up = list_init();
-				down = list_init();
-
-				// u0 = M+(α, tau)
-				mpz_mod(v, alpha, tau);
-				list_add(&up, 1, v);
-				if(DEBUG) gmp_printf("u1: %Zd\n", v);
-
-				// d0 = M-(α, tau)
-				mpz_sub(v, v, tau);
-				list_add(&down, 1, v);
-				if(DEBUG) gmp_printf("d1: %Zd\n", v);
-
-				while(true) {
-					if(list_last(&up)->idx <= list_last(&down)->idx) {
-						for(i = 0; i < down.len; i++) {
-							mpz_add(v, list_last(&up)->val, down.arr[i].val);
-							if(mpz_cmp(v, list_last(&down)->val) > 0)
-								break;
-						}
-
-						if(i == down.len)
-							fprintf(stderr, "invalid shift\n"), abort();
-
-						uint64_t next = list_last(&up)->idx + down.arr[i].idx;
-						if(next >= 9007199254740992)
-							break;
-
-						if(mpz_sgn(v) >= 0)
-							list_add(&up, next, v);
-						//gmp_printf("u%u: %Zd\n", next, v);
-
-						if(mpz_sgn(v) <= 0)
-							list_add(&down, next, v);
-						//gmp_printf("d%u: %Zd\n", next, v);
-					}
-					else {
-						for(i = 0; i < up.len; i++) {
-							mpz_add(v, list_last(&down)->val, up.arr[i].val);
-							if(mpz_cmp(v, list_last(&up)->val) < 0)
-								break;
-						}
-
-						if(i == up.len)
-							fprintf(stderr, "invalid shift\n"), abort();
-
-						uint64_t next = list_last(&down)->idx + up.arr[i].idx;
-						if(next >= 9007199254740992)
-							break;
-
-						if(mpz_sgn(v) >= 0)
-							list_add(&up, next, v);
-						//gmp_printf("u%u: %Zd\n", next, v);
-
-						if(mpz_sgn(v) <= 0)
-							list_add(&down, next, v);
-						//gmp_printf("d%u: %Zd\n", next, v);
-					}
-				}
-
-				// m0 = 2^(e-n) + 2^(e-p-1-n)
-
-				idx = 0;
-				mpz_ui_pow_ui(v, 2, e - n + 1);
-				mpz_add(v, v, alpha);
-				mpz_divexact_ui(v, v, 2);
-				mpz_mod(v, v, tau);
-
-				while(true) {
-					if(DEBUG) gmp_printf("m%llu: %Zd\n", idx, v);
-
-					if(mpz_cmpabs(v, delta) <= 0)
-						break;
-
-					if(mpz_sgn(v) >= 0) {
-						for(i = 0; i < down.len; i++) {
-							mpz_add(t, v, down.arr[i].val);
-							if(mpz_cmpabs(t, v) < 0)
-								break;
-						}
-
-						if(i == down.len)
-							gmp_printf("invalid state\n"), abort();
-
-						idx += down.arr[i].idx;
-						mpz_set(v, t);
-					}
-					else {
-						for(i = 0; i < up.len; i++) {
-							mpz_add(t, v, up.arr[i].val);
-							if(mpz_cmpabs(t, v) < 0)
-								break;
-						}
-
-						if(i == up.len)
-							gmp_printf("invalid state\n"), abort();
-
-						idx += up.arr[i].idx;
-						mpz_set(v, t);
-					}
-				}
-
-				if(mpz_cmpabs(v, delta) <= 0) {
-					struct list_t fnd;
-					FILE *file;
-
-					fnd = list_init();
-					file = fopen(ERRPATH, "a");
-
-					list_search(idx, v, &fnd, &up, &down, delta);
-
-					for(i = 0; i < fnd.len; i++) {
-						double flt;
-						char buf[10*1024];
-
-						if(DEBUG) gmp_printf("%llu: %Zd\n", fnd.arr[i].idx, fnd.arr[i].val);
-
-						mpz_ui_pow_ui(v, 2, e);
-						mpz_ui_pow_ui(t, 2, e-p);
-						mpz_mul_ui(t, t, fnd.arr[i].idx);
-						mpz_add(v, v, t);
-						gmp_sprintf(buf, "%Zd\n", v);
-						sscanf(buf, "%lf", &flt);
-						if(!errol3_check(flt))
-							fprintf(file, "%.17g\n", flt),
-							printf("%u:%.17g!!!!\n", i, flt);
-
-						mpz_ui_pow_ui(t, 2, e-p);
-						mpz_add(v, v, t);
-						gmp_sprintf(buf, "%Zd\n", v);
-						sscanf(buf, "%lf", &flt);
-						if(!errol3_check(flt))
-							fprintf(file, "%.17g\n", flt),
-							printf("%u:%.17g!!!!\n", i, flt);
-					}
-
-					fclose(file);
-					list_destroy(&fnd);
-				}
-
-				list_destroy(&up);
-				list_destroy(&down);
-			}
-		}
-
-		mpz_clears(delta, alpha, tau, v, t, NULL);
-	}
+	if(check4)
+		table_enum(4, false);
 
 	return 0;
 }
@@ -877,6 +275,42 @@ static bool opt_long(char ***arg, const char *pre, char **param)
 	}
 
 	(*arg)++;
+
+	return true;
+}
+
+/**
+ * Retrieve an integer argument.
+ *   @arg: The argument pointer.
+ *   @pre: The option to match.
+ *   @parameter: Optional. The parameter pointer.
+ *   &returns: True if matched with argument incremented.
+ */
+
+static bool opt_num(char ***arg, const char *pre, int *num)
+{
+	unsigned long val;
+	char *param, *value, *endptr;
+
+	if(!opt_long(arg, pre, &param))
+		return false;
+
+	errno = 0;
+	val = strtol(param, &endptr, 0);
+	if((val == 0) && (errno == 0))
+		fprintf(stderr, "Parameter cannot be zero.\n"), abort();
+
+	if((*endptr == 'k') || (*endptr == 'K'))
+		val *= 1000, endptr++;
+	else if((*endptr == 'm') || (*endptr == 'M'))
+		val *= 1000000, endptr++;
+
+	if(((val == 0) && (errno != 0)) || (*endptr != '\0'))
+		fprintf(stderr, "Invalid %s parameter '%s'.\n", pre, value), abort();
+	else if(val > INT_MAX)
+		fprintf(stderr, "Number too large '%s'.\n", value), abort();
+
+	*num = val;
 
 	return true;
 }
@@ -933,4 +367,229 @@ static int intsort(const void *left, const void *right)
 		return 1;
 	else
 		return 0;
+}
+
+
+/**
+ * Check a conversion.
+ *   @val: The value.
+ *   @str: The string.
+ *   @exp: The exponent.
+ *   @cor: The correct flag.
+ *   @opt: The optimal flag.
+ *   @best: The best flag.
+ *   &returns: The actual value.
+ */
+
+static double chk_conv(double val, const char *str, int32_t exp, bool *cor, bool *opt, bool *best)
+{
+	double chk;
+	int32_t dragon4exp;
+	char dragon4[32], full[snprintf(NULL, 0, "0.%se%d", str, exp) + 1];
+
+	dragon4exp = dragon4_proc(val, dragon4);
+
+	sprintf(full, "0.%se%d", str, exp);
+	sscanf(full, "%lf", &chk);
+
+	*cor = (val == chk);
+	*opt = (*cor && (strlen(str) == strlen(dragon4)));
+	*best = (*opt && (exp == dragon4exp) && !strcmp(str, dragon4));
+
+	return chk;
+}
+
+
+/**
+ * Add to the table.
+ *   @table: The table.
+ *   @val: The value.
+ */
+
+static void table_add(struct errol_err_t table[1024][4], double val)
+{
+	int j;
+	uint16_t i;
+
+	i = errol_hash(val);
+
+	for(j = 0; j < 4; j++) {
+		if(table[i][j].val == 0.0)
+			break;
+	}
+
+	if(j == 4)
+		fprintf(stderr, "Too many values packed into a bin!\n");
+	else {
+		table[i][j] = (struct errol_err_t){ val };
+		table[i][j].exp = dragon4_proc(table[i][j].val, table[i][j].str);
+	}
+}
+
+/**
+ * Process the enumeration algorithm.
+ *   @ver: The version.
+ *   @bld: Whether to build the table or check it.
+ */
+
+static void table_enum(unsigned int ver, bool bld)
+{
+	int i, e, n, p, exp, cnt = 0;
+	int64_t *arr;
+	mpz_t delta, m0, alpha, tau, t;
+	struct errol_err_t table[1024][4] = { 0 };
+	static unsigned int D = 17, P = 52;
+
+	assert((ver == 3) || (ver == 4));
+
+	mpz_inits(delta, m0, alpha, tau, t, NULL);
+
+	//for(e = -1022; e < 4; e++) {
+	for(e = -1074; e <= 4; e++) {
+		mpz_t t0, t1;
+
+		/* bits of precision */
+		p = (e >= -1022) ? P : (e + 1074);
+
+		/* log10(5^{-e+p+1}2^{p+1}) - D + 2 */
+		n = floor((-e+p+1)*log10(5.0) + (p+1)*log10(2.0)) - D + 2;
+
+		/* common constants */
+		mpz_inits(t0, t1, NULL);
+		mpz_ui_pow_ui(t0, 5, -e+p+1-n);
+		mpz_ui_pow_ui(t1, 2, P-1);
+
+		/* Δ = 2^{1-P}5^{-e+p+1-n} */
+		mpz_mul_ui(delta, t0, 79);
+
+		/* α = 2*5^{-e+p+1-n}*/
+		mpz_mul_ui(alpha, t0, 2);
+		mpz_mul(alpha, alpha, t1);
+
+		/* τ = 2^n */
+		mpz_ui_pow_ui(tau, 2, n);
+		mpz_mul(tau, tau, t1);
+
+		/* m0 = 2^{p+1} 5^{-e+p+1-n} + 5^{e+p+1-n} */
+		mpz_ui_pow_ui(t, 2, p+1);
+		mpz_mul(m0, t0, t);
+		mpz_add(m0, m0, t0);
+		mpz_mul(m0, m0, t1);
+
+		/*
+		   gmp_printf("e  %d\n", e);
+		   gmp_printf("p  %d\n", p);
+		   gmp_printf("n  %u\n", n);
+		   gmp_printf("α  %Zd\n", alpha);
+		   gmp_printf("Δ  %Zd\n", delta);
+		   gmp_printf("τ  %Zd\n", tau);
+		   gmp_printf("m0 %Zd\n", m0);
+		   */
+
+		/* find possible failures */
+		arr = proof_enum(delta, m0, alpha, tau, p);
+
+		for(i = 0; arr[i] >= 0; i++) {
+			double v;
+
+			v = ldexp(1.0, e) + ldexp(arr[i], e-52);
+			if(!(bld ? errolNu_check : errolN_check)(ver, v))
+				table_add(table, v), cnt++;
+
+			v = ldexp(1.0, e) + ldexp(arr[i]+1, e-52);
+			if(!(bld ? errolNu_check : errolN_check)(ver, v))
+				table_add(table, v), cnt++;
+		}
+
+		free(arr);
+
+		mpz_clears(t0, t1, NULL);
+	}
+
+	for(int e = 128; e <= 1023; e++) {
+		unsigned int p = P;
+
+		/* log10(2^{e+1}) - D + 2 */
+		n = floor((e+1.0)*log10(2.0)) - D + 2;
+
+		/* Δ = 2^(e-p-n) 79ϵ = 79 2^{e-2p-n) */
+		exp = e - 2*p - n;
+		mpz_ui_pow_ui(delta, 2, (exp > 0) ? exp : 0);
+		mpz_mul_ui(delta, delta, 179);
+
+		/* α = 2^(e-p-n) */
+		mpz_ui_pow_ui(alpha, 2, e - p - n);
+
+		/* τ = 5^n */
+		mpz_ui_pow_ui(tau, 5, n);
+
+		/* m0 = 2^(e-n) + 2^(e-p-1-n) */
+		mpz_ui_pow_ui(m0, 2, e-n);
+		mpz_ui_pow_ui(t, 2, e-p-n-1);
+		mpz_add(m0, m0, t);
+
+		/*
+		   gmp_printf("e  %d\n", e);
+		   gmp_printf("p  %d\n", p);
+		   gmp_printf("n  %u\n", n);
+		   gmp_printf("α  %Zd\n", alpha);
+		   gmp_printf("Δ  %Zd\n", delta);
+		   gmp_printf("τ  %Zd\n", tau);
+		   */
+
+		/* find possible failures */
+		arr = proof_enum(delta, m0, alpha, tau, p);
+
+		for(i = 0; arr[i] >= 0; i++) {
+			double v;
+
+			v = ldexp(1.0, e) + ldexp(arr[i], e-52);
+			if(!(bld ? errolNu_check : errolN_check)(ver, v))
+				table_add(table, v), cnt++;
+
+			v = ldexp(1.0, e) + ldexp(arr[i]+1, e-52);
+			if(!(bld ? errolNu_check : errolN_check)(ver, v))
+				table_add(table, v), cnt++;
+		}
+
+		free(arr);
+	}
+
+	mpz_clears(delta, m0, alpha, tau, t, NULL);
+
+	if(!(bld ? errolNu_check : errolN_check)(ver, DBL_MIN))
+		table_add(table, DBL_MIN), cnt++;
+
+	if(!(bld ? errolNu_check : errolN_check)(ver, DBL_MAX))
+		table_add(table, DBL_MAX), cnt++;
+
+	if(bld) {
+		FILE *file;
+
+		file = fopen((ver == 3) ? "enum3.h" : "enum4.h", "w");
+		fprintf(file, "struct errol_err_t errol_enum%d[1024][4] = {\n", ver);
+
+		for(i = 0; i < 512; i++) {
+			fprintf(file, "\t{ ");
+			fprintf(file, "{ %.17e, \"%s\", %d }, ", table[i][0].val, table[i][0].str, table[i][0].exp);
+			fprintf(file, "{ %.17e, \"%s\", %d }, ", table[i][1].val, table[i][1].str, table[i][1].exp);
+			fprintf(file, "{ %.17e, \"%s\", %d }, ", table[i][2].val, table[i][2].str, table[i][2].exp);
+			fprintf(file, "{ %.17e, \"%s\", %d }", table[i][3].val, table[i][3].str, table[i][3].exp);
+			fprintf(file, "},\n");
+		}
+
+		fprintf(file, "};\n");
+		fclose(file);
+	}
+	else {
+		for(i = 0; i < 1024; i++) {
+			if(table[i][0].val != 0.0)
+				printf("Failed value %.17e\n", table[i][0].val);
+
+			if(table[i][1].val != 0.0)
+				printf("Failed value %.17e\n", table[i][1].val);
+		}
+	}
+
+	printf("Enumerating Errol%u%s, %u failures\n", ver, bld ? "u" : "", cnt);
 }
