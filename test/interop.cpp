@@ -1,5 +1,5 @@
-#include "../grisu/src/fast-dtoa.h"
-#include "../lib/errol.h"
+#include <double-conversion/fast-dtoa.h>
+#include <errol.h>
 #include "dragon4.h"
 #include <stdio.h>
 #include <string.h>
