@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "errol.h"
+#include "itoa_c.h"
 
 /*
  * floating point format definitions
@@ -51,6 +52,13 @@ static void inline hp_normalize(struct hp_t *hp);
 static void inline hp_mul10(struct hp_t *hp);
 static void inline hp_div10(struct hp_t *hp);
 static struct hp_t hp_prod(struct hp_t in, double val);
+
+/*
+ * inline function instantiations
+ */
+
+extern inline char *u32toa(uint32_t value, char *buffer);
+extern inline char *u64toa(uint64_t value, char *buffer);
 
 
 /**
@@ -528,7 +536,6 @@ int errol4u_dtoa(double val, char *buf)
 		exp--, hp_mul10(&mid), ten *= 10.0;
 
 	double diff = (fpnext(val) - val) * lten * ten / 2.0;
-	int i = 0;
 	uint64_t val64 = (uint64_t)mid.val;
 	uint64_t lo64 = val64 + (uint64_t)floor(mid.off - diff);
 	uint64_t mid64;
@@ -536,8 +543,6 @@ int errol4u_dtoa(double val, char *buf)
 
 	if(hi64 >= 1e18)
 		exp++;
-
-	uint8_t tmp[32];
 
 	uint64_t iten;
 	for(iten = 1; ; iten *= 10) {
@@ -550,15 +555,8 @@ int errol4u_dtoa(double val, char *buf)
 
 	mid64 = (val64 + (uint64_t)floor(mid.off + iten * 0.5)) / iten;
 
-	while(hi64 > 0) {
-		tmp[i] = hi64 % 10;
-		hi64 /= 10;
-		i++;
-	}
-
-	for(i--; i >= 0; i--)
-		*buf++ = tmp[i] + '0';
-
+	if (hi64 > 0)
+		buf = u64toa(hi64, buf);
 	*buf++ = mid64 % 10 + '0';
 	*buf = '\0';
 
@@ -638,8 +636,8 @@ int errol_int(double val, char *buf)
 
 int errol_fixed(double val, char *buf)
 {
-	char tmp[16];
-	int i, j, exp;
+	char *p;
+	int j, exp;
 	double n, mid, lo, hi;
 
 	assert((val >= 16.0) && (val < 9.007199254740992e15));
@@ -650,37 +648,8 @@ int errol_fixed(double val, char *buf)
 	lo = ((fpprev(val) - n) + mid) / 2.0;
 	hi = ((fpnext(val) - n) + mid) / 2.0;
 
-	uint64_t ival = (uint64_t)n;
-	uint32_t lo32, hi32;
-
-	lo32 = ival % 1000000000ul;
-	hi32 = ival / 1000000000ul;
-	i= 0;
-	if(hi32 > 0) {
-		for(i = 0; i < 9; i++) {
-			tmp[i] = lo32 % 10;
-			lo32 /= 10;
-		}
-
-		while(hi32 > 0) {
-			tmp[i] = hi32 % 10;
-			hi32 /= 10;
-			i++;
-		}
-	}
-	else {
-		while(lo32 > 0) {
-			tmp[i] = lo32 % 10;
-			lo32 /= 10;
-			i++;
-		}
-	}
-
-	exp = i;
-
-	for(j = 0, i--; i >= 0; j++, i--)
-		buf[j] = tmp[i] + '0';
-
+	p = u64toa((uint64_t)n, buf);
+	j = exp = p - buf;
 	buf[j] = '\0';
 
 	if(mid != 0.0) {
