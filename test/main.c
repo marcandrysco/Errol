@@ -7,9 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
-#include <sys/time.h>
 #include <errol.h>
 #include <gmp.h>
 
@@ -21,9 +19,6 @@
 static bool opt_long(char ***arg, const char *pre, char **value);
 static bool opt_num(char ***arg, const char *pre, int *num);
 
-static void rndinit();
-static double rndval();
-
 static int intsort(const void *left, const void *right);
 
 static double chk_conv(double val, const char *str, int32_t exp, bool *cor, bool *opt, bool *best);
@@ -34,6 +29,10 @@ static void table_enum(unsigned int ver, bool bld);
 /*
  * interop function declarations
  */
+
+double rndval();
+void reseed(uint_fast64_t value);
+uint_fast64_t get_seed();
 
 int grisu3_proc(double val, char *buf, bool *suc);
 uint32_t grisu_bench(double val, bool *suc);
@@ -66,7 +65,6 @@ int main(int argc, char **argv)
 	bool quiet = false, enum3 = false, enum4 = false, check3 = false, check4 = false;
 	int n, perf = 0, fuzz[5] = { 0, 0, 0, 0, 0 };
 
-	rndinit();
 	rndval();
 
 	for(arg = argv + 1; *arg != NULL; ) {
@@ -137,7 +135,7 @@ int main(int argc, char **argv)
 #define Nhigh	(N - Nlow)
 #define Nsize	(Nhigh - Nlow)
 
-		uint32_t seed = time(NULL);
+		uint_fast64_t seed = get_seed();
 		uint32_t dragon4 = 0, grisu3 = 0, errol[5] = { 0, 0, 0, 0, 0 }, adj3 = 0;
 		unsigned int i, j;
 		static uint32_t dragon4all[20000][N], grisu3all[20000][N], errolNall[5][20000][N], adj3all[20000][N];
@@ -146,7 +144,7 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Cannot support more than 20k performance numberss.\n"), abort();
 
 		for(j = 0; j < N; j++) {
-			srand(seed);
+			reseed(seed);
 			for(i = 0; i < perf; i++) {
 				double val;
 				bool suc;
@@ -164,7 +162,7 @@ int main(int argc, char **argv)
 			}
 		}
 
-		srand(seed);
+		reseed(seed);
 
 		for(i = 0; i < perf; i++) {
 			double val = rndval();
@@ -313,42 +311,6 @@ static bool opt_num(char ***arg, const char *pre, int *num)
 	*num = val;
 
 	return true;
-}
-
-
-/**
- * Initialize the random number generator.
- */
-
-static void rndinit()
-{
-	struct timeval tv;
-
-	gettimeofday(&tv, NULL);
-	srand(1000000 * (int64_t)tv.tv_sec + (int64_t)tv.tv_usec);
-}
-
-/**
- * Create a random double value. The random value is always positive, non-zero, not
- * infinity, and non-NaN.
- *   &returns: The random double.
- */
-
-static double rndval()
-{
-	union {
-		double d;
-		uint16_t arr[4];
-	} val;
-
-	do {
-		val.arr[0] = rand();
-		val.arr[1] = rand();
-		val.arr[2] = rand();
-		val.arr[3] = rand() & ~(0x8000);
-	} while(isnan(val.d) || (val.d == 0.0) || !isfinite(val.d));
-
-	return val.d;
 }
 
 

@@ -3,6 +3,9 @@
 #include "dragon4.h"
 #include <stdio.h>
 #include <string.h>
+#include <cmath>
+#include <random>
+#include <immintrin.h>
 
 /*
  * namespaces
@@ -27,6 +30,67 @@ static inline uint64_t rdtsc()
 			: "%rcx", "%rbx", "memory");
 
 	return ((uint64_t)a) | (((uint64_t)d) << 32);
+}
+
+
+/**
+ * Retrieve a 64-bit seed from CPU.
+ *   &returns: An integer with an unpredictable value.
+ */
+
+extern "C" uint_fast64_t get_seed()
+{
+#if defined(__RDRND__)
+	unsigned long long v;
+	_rdrand64_step(&v);
+	return v;
+#else
+	return rdtsc() ^ (uint_fast64_t(std::random_device{}()) << 32);
+#endif
+}
+
+
+/**
+ * Initialize the global random engine.
+ *   &returns: The engine.
+ */
+
+inline std::mt19937_64& global_rng()
+{
+	static std::mt19937_64 e{ get_seed() };
+	return e;
+}
+
+
+/**
+ * Create a random double value. The random value is always positive, non-zero,
+ * not infinity, and non-NaN.
+ *   &returns: The random double.
+ */
+
+extern "C" double rndval()
+{
+	union
+	{
+		double d;
+		uint64_t i;
+	} val;
+
+	do
+		val.i = global_rng()() & ~(0x8000000000000000);
+	while ((val.d == 0.0) || !std::isfinite(val.d));
+	return val.d;
+}
+
+
+/**
+ * Seed the global random engine.
+ *   @value: The seed to use.
+ */
+
+extern "C" void reseed(uint_fast64_t value)
+{
+	global_rng().seed(value);
 }
 
 
