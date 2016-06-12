@@ -49,8 +49,8 @@ struct hp_t {
 
 static void inline hp_normalize(struct hp_t *hp);
 static void inline hp_mul10(struct hp_t *hp);
-static void hp_div10(struct hp_t *hp);
-struct hp_t hp_prod(struct hp_t in, double val);
+static void inline hp_div10(struct hp_t *hp);
+static struct hp_t hp_prod(struct hp_t in, double val);
 
 
 /**
@@ -778,7 +778,7 @@ static inline void hp_mul10(struct hp_t *hp)
  *   @hp: The high-precision number
  */
 
-static void hp_div10(struct hp_t *hp)
+static inline void hp_div10(struct hp_t *hp)
 {
 	double val = hp->val;
 
@@ -793,7 +793,7 @@ static void hp_div10(struct hp_t *hp)
 	hp_normalize(hp);
 }
 
-double gethi(double in)
+static inline double gethi(double in)
 {
 	union { double d; uint64_t i; } v = { .d = in };
 
@@ -810,7 +810,7 @@ double gethi(double in)
  *   @lo: The low bits.
  */
 
-void split(double val, double *hi, double *lo)
+static inline void split(double val, double *hi, double *lo)
 {
 	//double t = (134217728.0 + 1.0) * val;
 
@@ -829,7 +829,7 @@ void split(double val, double *hi, double *lo)
  *   &returns: The HP number.
  */
 
-struct hp_t hp_prod(struct hp_t in, double val)
+static struct hp_t hp_prod(struct hp_t in, double val)
 {
 	double p, hi, lo, e;
 
