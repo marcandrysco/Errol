@@ -288,7 +288,7 @@ static bool opt_long(char ***arg, const char *pre, char **param)
 static bool opt_num(char ***arg, const char *pre, int *num)
 {
 	unsigned long val;
-	char *param, *value, *endptr;
+	char *param, *endptr;
 
 	if(!opt_long(arg, pre, &param))
 		return false;
@@ -304,9 +304,9 @@ static bool opt_num(char ***arg, const char *pre, int *num)
 		val *= 1000000, endptr++;
 
 	if(((val == 0) && (errno != 0)) || (*endptr != '\0'))
-		fprintf(stderr, "Invalid %s parameter '%s'.\n", pre, value), abort();
+		fprintf(stderr, "Invalid %s parameter '%s'.\n", pre, param), abort();
 	else if(val > INT_MAX)
-		fprintf(stderr, "Number too large '%s'.\n", value), abort();
+		fprintf(stderr, "Number too large '%s'.\n", param), abort();
 
 	*num = val;
 
@@ -399,7 +399,7 @@ static void table_enum(unsigned int ver, bool bld)
 	int i, e, n, p, exp, cnt = 0;
 	int64_t *arr;
 	mpz_t delta, m0, alpha, tau, t;
-	struct errol_err_t table[1024][4] = { 0 };
+	struct errol_err_t table[1024][4] = {{{ 0 }}};
 	static unsigned int D = 17, P = 52;
 
 	assert((ver == 3) || (ver == 4));
