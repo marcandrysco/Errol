@@ -52,6 +52,7 @@ static void inline hp_normalize(struct hp_t *hp);
 static void inline hp_mul10(struct hp_t *hp);
 static void inline hp_div10(struct hp_t *hp);
 static struct hp_t hp_prod(struct hp_t in, double val);
+static int inline table_lower_bound(uint64_t *table, int n, uint64_t k);
 
 /*
  * inline function instantiations
@@ -328,32 +329,17 @@ int16_t errol2_dtoa(double val, char *buf, bool *opt)
 
 int errol3_dtoa(double val, char *buf)
 {
-	uint16_t i;
+	errol_bits_t k = { val };
 
-	i = errol_hash(val);
-
-	if(errol_enum3[i][0].val == val) {
-		strcpy(buf, errol_enum3[i][0].str);
-
-		return errol_enum3[i][0].exp;
+	int n = sizeof(errol_enum3) / sizeof(uint64_t);
+	int i = table_lower_bound(errol_enum3, n, k.i);
+	if (i < n && errol_enum3[i] == k.i)
+	{
+		strcpy(buf, errol_enum3_data[i].str);
+		return errol_enum3_data[i].exp;
 	}
-	else if(errol_enum3[i][1].val == val) {
-		strcpy(buf, errol_enum3[i][1].str);
 
-		return errol_enum3[i][1].exp;
-	}
-	else if(errol_enum3[i][2].val == val) {
-		strcpy(buf, errol_enum3[i][2].str);
-
-		return errol_enum3[i][2].exp;
-	}
-	else if(errol_enum3[i][3].val == val) {
-		strcpy(buf, errol_enum3[i][3].str);
-
-		return errol_enum3[i][3].exp;
-	}
-	else
-		return errol3u_dtoa(val, buf);
+	return errol3u_dtoa(val, buf);
 }
 
 /**
@@ -468,17 +454,7 @@ int errol4_dtoa(double val, char *buf)
 	errol_bits_t k = { val };
 
 	int n = sizeof(errol_enum4) / sizeof(uint64_t);
-	int i = n, j = 0;
-	while (j < n)
-	{
-		if (errol_enum4[j] < k.i)
-			j = 2 * j + 2;
-		else
-		{
-			i = j;
-			j = 2 * j + 1;
-		}
-	}
+	int i = table_lower_bound(errol_enum4, n, k.i);
 	if (i < n && errol_enum4[i] == k.i)
 	{
 		strcpy(buf, errol_enum4_data[i].str);
@@ -698,22 +674,6 @@ int errol_fixed(double val, char *buf)
 
 
 /**
- * Hash a floating-point number into 2^10 bins.
- *   @val: The value.
- *   &returns: The hash.
- */
-
-uint16_t errol_hash(double val)
-{
-	union { double d; uint32_t i[2]; } u;
-
-	u.d = val;
-
-	return ((u.i[1] >> 20) ^ (u.i[1] * 750363209) ^ (u.i[0] * 912123041)) & 0x1FF;
-}
-
-
-/**
  * Normalize the number by factoring in the error.
  *   @hp: The float pair.
  */
@@ -815,4 +775,30 @@ static struct hp_t hp_prod(struct hp_t in, double val)
 	e = ((hi * hi2 - p) + lo * hi2 + hi * lo2) + lo * lo2;
 
 	return (struct hp_t){ p, in.off * val + e };
+}
+
+/**
+ * Find the insertion point for a key in a level-order array.
+ *   @table: The target array.
+ *   @n: Array size.
+ *   @k: The key to find.
+ *   &returns: The insertion point.
+ */
+
+static inline int table_lower_bound(uint64_t *table, int n, uint64_t k)
+{
+	int i = n, j = 0;
+
+	while (j < n)
+	{
+		if (table[j] < k)
+			j = 2 * j + 2;
+		else
+		{
+			i = j;
+			j = 2 * j + 1;
+		}
+	}
+
+	return i;
 }

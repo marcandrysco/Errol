@@ -29,8 +29,6 @@ int errol4u_dtoa(double val, char *buf);
 int errol_int(double val, char *buf);
 int errol_fixed(double val, char *buf);
 
-uint16_t errol_hash(double val);
-
 struct errol_err_t {
 	double val;
 	char str[18];
