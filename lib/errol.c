@@ -465,19 +465,24 @@ int errol3u_dtoa(double val, char *buf)
 
 int errol4_dtoa(double val, char *buf)
 {
-	int j;
-	uint16_t i;
+	errol_bits_t k = { val };
 
-	i = errol_hash(val);
-
-	for(j = 0; j < 4; j++) {
-		if(errol_enum4[i][j].val == 0.0)
-			break;
-		else if(errol_enum4[i][j].val == val) {
-			strcpy(buf, errol_enum4[i][j].str);
-
-			return errol_enum4[i][j].exp;
+	int n = sizeof(errol_enum4) / sizeof(uint64_t);
+	int i = n, j = 0;
+	while (j < n)
+	{
+		if (errol_enum4[j] < k.i)
+			j = 2 * j + 2;
+		else
+		{
+			i = j;
+			j = 2 * j + 1;
 		}
+	}
+	if (i < n && errol_enum4[i] == k.i)
+	{
+		strcpy(buf, errol_enum4_data[i].str);
+		return errol_enum4_data[i].exp;
 	}
 
 	return errol4u_dtoa(val, buf);

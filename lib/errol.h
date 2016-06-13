@@ -37,6 +37,16 @@ struct errol_err_t {
 	int exp;
 };
 
+struct errol_slab_t {
+	char str[18];
+	int exp;
+};
+
+typedef union {
+	double d;
+	uint64_t i;
+} errol_bits_t;
+
 #ifdef __cplusplus
 }
 #endif

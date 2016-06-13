@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <errol.h>
 #include <gmp.h>
+#include <inttypes.h>
 
 
 /*
@@ -20,11 +21,13 @@ static bool opt_long(char ***arg, const char *pre, char **value);
 static bool opt_num(char ***arg, const char *pre, int *num);
 
 static int intsort(const void *left, const void *right);
+static int err_t_sort(const void *left, const void *right);
 
 static double chk_conv(double val, const char *str, int32_t exp, bool *cor, bool *opt, bool *best);
 
-static void table_add(struct errol_err_t table[1024][4], double val);
+static void table_add(struct errol_err_t[static 1024], int i, double val);
 static void table_enum(unsigned int ver, bool bld);
+static void table_to_tree(struct errol_err_t *table, int n);
 
 /*
  * interop function declarations
@@ -331,6 +334,26 @@ static int intsort(const void *left, const void *right)
 		return 0;
 }
 
+/**
+ * Sort errol_err_t in terms of bit patterns of the floating points.
+ *   @left: The left pointer.
+ *   @right: The right pointer.
+ *   &returns: The order.
+ */
+
+static int err_t_sort(const void *left, const void *right)
+{
+	errol_bits_t l = { ((struct errol_err_t *)left)->val };
+	errol_bits_t r = { ((struct errol_err_t *)right)->val };
+
+	if (l.i < r.i)
+		return -1;
+	else if (l.i == r.i)
+		return 0;
+	else
+		return 1;
+}
+
 
 /**
  * Check a conversion.
@@ -365,27 +388,14 @@ static double chk_conv(double val, const char *str, int32_t exp, bool *cor, bool
 /**
  * Add to the table.
  *   @table: The table.
+ *   @i: Insertion point.
  *   @val: The value.
  */
 
-static void table_add(struct errol_err_t table[1024][4], double val)
+static void table_add(struct errol_err_t table[static 1024], int i, double val)
 {
-	int j;
-	uint16_t i;
-
-	i = errol_hash(val);
-
-	for(j = 0; j < 4; j++) {
-		if(table[i][j].val == 0.0)
-			break;
-	}
-
-	if(j == 4)
-		fprintf(stderr, "Too many values packed into a bin!\n");
-	else {
-		table[i][j] = (struct errol_err_t){ val };
-		table[i][j].exp = dragon4_proc(table[i][j].val, table[i][j].str);
-	}
+	table[i] = (struct errol_err_t){ val };
+	table[i].exp = dragon4_proc(table[i].val, table[i].str);
 }
 
 /**
@@ -399,7 +409,7 @@ static void table_enum(unsigned int ver, bool bld)
 	int i, e, n, p, exp, cnt = 0;
 	int64_t *arr;
 	mpz_t delta, m0, alpha, tau, t;
-	struct errol_err_t table[1024][4] = {{{ 0 }}};
+	struct errol_err_t table[1024] = {{ 0 }};
 	static unsigned int D = 17, P = 52;
 
 	assert((ver == 3) || (ver == 4));
@@ -456,11 +466,11 @@ static void table_enum(unsigned int ver, bool bld)
 
 			v = ldexp(1.0, e) + ldexp(arr[i], e-52);
 			if(!(bld ? errolNu_check : errolN_check)(ver, v))
-				table_add(table, v), cnt++;
+				table_add(table, cnt++, v);
 
 			v = ldexp(1.0, e) + ldexp(arr[i]+1, e-52);
 			if(!(bld ? errolNu_check : errolN_check)(ver, v))
-				table_add(table, v), cnt++;
+				table_add(table, cnt++, v);
 		}
 
 		free(arr);
@@ -507,11 +517,11 @@ static void table_enum(unsigned int ver, bool bld)
 
 			v = ldexp(1.0, e) + ldexp(arr[i], e-52);
 			if(!(bld ? errolNu_check : errolN_check)(ver, v))
-				table_add(table, v), cnt++;
+				table_add(table, cnt++, v);
 
 			v = ldexp(1.0, e) + ldexp(arr[i]+1, e-52);
 			if(!(bld ? errolNu_check : errolN_check)(ver, v))
-				table_add(table, v), cnt++;
+				table_add(table, cnt++, v);
 		}
 
 		free(arr);
@@ -520,24 +530,30 @@ static void table_enum(unsigned int ver, bool bld)
 	mpz_clears(delta, m0, alpha, tau, t, NULL);
 
 	if(!(bld ? errolNu_check : errolN_check)(ver, DBL_MIN))
-		table_add(table, DBL_MIN), cnt++;
+		table_add(table, cnt++, DBL_MIN);
 
 	if(!(bld ? errolNu_check : errolN_check)(ver, DBL_MAX))
-		table_add(table, DBL_MAX), cnt++;
+		table_add(table, cnt++, DBL_MAX);
 
 	if(bld) {
 		FILE *file;
 
-		file = fopen((ver == 3) ? "enum3.h" : "enum4.h", "w");
-		fprintf(file, "struct errol_err_t errol_enum%d[1024][4] = {\n", ver);
+		qsort(table, cnt, sizeof(struct errol_err_t), err_t_sort);
+		table_to_tree(table, cnt);
 
-		for(i = 0; i < 512; i++) {
-			fprintf(file, "\t{ ");
-			fprintf(file, "{ %.17e, \"%s\", %d }, ", table[i][0].val, table[i][0].str, table[i][0].exp);
-			fprintf(file, "{ %.17e, \"%s\", %d }, ", table[i][1].val, table[i][1].str, table[i][1].exp);
-			fprintf(file, "{ %.17e, \"%s\", %d }, ", table[i][2].val, table[i][2].str, table[i][2].exp);
-			fprintf(file, "{ %.17e, \"%s\", %d }", table[i][3].val, table[i][3].str, table[i][3].exp);
-			fprintf(file, "},\n");
+		file = fopen((ver == 3) ? "enum3.h" : "enum4.h", "w");
+		fprintf(file, "static uint64_t errol_enum%d[%d] = {\n", ver, cnt);
+
+		for(i = 0; i < cnt; i++) {
+			errol_bits_t bits = { table[i].val };
+			fprintf(file, "\t%#.16" PRIx64 ",\n", bits.i);
+		}
+
+		fprintf(file, "};\n");
+		fprintf(file, "static struct errol_slab_t errol_enum%d_data[%d] = {\n", ver, cnt);
+
+		for(i = 0; i < cnt; i++) {
+			fprintf(file, "\t{ \"%s\", %d },\n", table[i].str, table[i].exp);
 		}
 
 		fprintf(file, "};\n");
@@ -545,13 +561,65 @@ static void table_enum(unsigned int ver, bool bld)
 	}
 	else {
 		for(i = 0; i < 1024; i++) {
-			if(table[i][0].val != 0.0)
-				printf("Failed value %.17e\n", table[i][0].val);
+			if(table[i].val != 0.0)
+				printf("Failed value %.17e\n", table[i].val);
 
-			if(table[i][1].val != 0.0)
-				printf("Failed value %.17e\n", table[i][1].val);
+			if(table[i].val != 0.0)
+				printf("Failed value %.17e\n", table[i].val);
 		}
 	}
 
 	printf("Enumerating Errol%u%s, %u failures\n", ver, bld ? "u" : "", cnt);
+}
+
+/**
+ * Calculate the index of the root node when reordering a sorted array to
+ * the level-order of a binary search tree.
+ *   @n: Array size.
+ *   &returns: The index.
+ */
+
+static inline int table_root(int n)
+{
+	if (n <= 1)
+		return 0;
+	int i = 2;
+	while (i <= n)
+		i *= 2;
+	int a = i / 2 - 1;
+	int b = n - i / 4;
+	return a < b ? a : b;
+}
+
+/**
+ * Insert all elements in a sorted array to another array in level-order.
+ *   @table: The destination.
+ *   @i: Insertion point.
+ *   @from: The source.
+ *   @n: Array size.
+ */
+
+static void table_to_tree_iter(struct errol_err_t *table, int i,
+                               struct errol_err_t *from, int n)
+{
+	if (n > 0)
+	{
+		int h = table_root(n);
+		table[i] = from[h];
+		table_to_tree_iter(table, 2 * i + 1, from, h);
+		table_to_tree_iter(table, 2 * i + 2, from + h + 1, n - h - 1);
+	}
+}
+
+/**
+ * Reorder a sorted array to the level-order of a binary search tree.
+ *   @table: The input array.
+ *   @n: Array size.
+ */
+
+static void table_to_tree(struct errol_err_t *table, int n)
+{
+	struct errol_err_t from[1024];
+	memcpy(from, table, n * sizeof(struct errol_err_t));
+	table_to_tree_iter(table, 0, from, n);
 }
