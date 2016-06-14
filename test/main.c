@@ -76,7 +76,7 @@ int main(int argc, char **argv)
 		else if(opt_num(&arg, "fuzz1", &n))
 			fuzz[1] = n;
 		else if(opt_num(&arg, "fuzz2", &n))
-			fuzz[3] = n;
+			fuzz[2] = n;
 		else if(opt_num(&arg, "fuzz3", &n))
 			fuzz[3] = n;
 		else if(opt_num(&arg, "fuzz4", &n))

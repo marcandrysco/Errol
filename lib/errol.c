@@ -13,10 +13,20 @@
  */
 
 typedef double fpnum_t;
-#define FP_MAX DOUBLE_MAX
-#define FP_MIN DOUBLE_MIN
-#define fpnext(val) nextafter(val, INFINITY)
-#define fpprev(val) nextafter(val, -INFINITY)
+
+static inline double fpnext(double val)
+{
+	errol_bits_t bits = { val };
+	bits.i++;
+	return bits.d;
+}
+
+static inline double fpprev(double val)
+{
+	errol_bits_t bits = { val };
+	bits.i--;
+	return bits.d;
+}
 
 #define ERROL0_EPSILON	0.0000001
 #define ERROL1_EPSILON  8.77e-15
@@ -274,8 +284,8 @@ int16_t errol2_dtoa(double val, char *buf, bool *opt)
 	__uint128_t low, mid, high, pow19 = (__uint128_t)1e19;
 
 	mid = (__uint128_t)val;
-	low = mid - (__uint128_t)((nextafter(val, INFINITY) -val) / 2.0);
-	high = mid + (__uint128_t)((val - nextafter(val, -INFINITY)) / 2.0);
+	low = mid - (__uint128_t)((fpnext(val) -val) / 2.0);
+	high = mid + (__uint128_t)((val - fpprev(val)) / 2.0);
 
 	bits.d = val;
 	if(bits.i & 0x1)
@@ -565,8 +575,8 @@ int errol_int(double val, char *buf)
 	assert((val >= 9.007199254740992e15) && val < (3.40282366920938e38));
 
 	mid = (__uint128_t)val;
-	low = mid - (__uint128_t)((nextafter(val, INFINITY) -val) / 2.0);
-	high = mid + (__uint128_t)((val - nextafter(val, -INFINITY)) / 2.0);
+	low = mid - (__uint128_t)((fpnext(val) -val) / 2.0);
+	high = mid + (__uint128_t)((val - fpprev(val)) / 2.0);
 
 	bits.d = val;
 	if(bits.i & 0x1)
