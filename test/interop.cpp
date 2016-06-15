@@ -63,23 +63,18 @@ inline std::mt19937_64& global_rng()
 
 
 /**
- * Create a random double value. The random value is always positive, non-zero,
- * not infinity, and non-NaN.
+ * Create a random double value.
+ *   @upper: Minimum floating point value.
+ *   @lower: Maximum floating point value.
  *   &returns: The random double.
  */
 
-extern "C" double rndval()
+extern "C" double rndval(double lower, double upper)
 {
-	union
-	{
-		double d;
-		uint64_t i;
-	} val;
-
-	do
-		val.i = global_rng()() & ~(0x8000000000000000);
-	while ((val.d == 0.0) || !std::isfinite(val.d));
-	return val.d;
+	errol_bits_t a = { lower }, b = { upper };
+	std::uniform_int_distribution<uint64_t> dist(a.i, b.i);
+	errol_bits_t r = { .i = dist(global_rng()) };
+	return r.d;
 }
 
 

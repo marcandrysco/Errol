@@ -19,6 +19,7 @@
 
 static bool opt_long(char ***arg, const char *pre, char **value);
 static bool opt_num(char ***arg, const char *pre, int *num);
+static bool opt_real(char ***arg, const char *pre, double *num);
 
 static int intsort(const void *left, const void *right);
 static int err_t_sort(const void *left, const void *right);
@@ -33,7 +34,7 @@ static void table_to_tree(struct errol_err_t *table, int n);
  * interop function declarations
  */
 
-double rndval();
+double rndval(double lower, double upper);
 void reseed(uint_fast64_t value);
 uint_fast64_t get_seed();
 
@@ -67,8 +68,7 @@ int main(int argc, char **argv)
 	char **arg;
 	bool quiet = false, enum3 = false, enum4 = false, check3 = false, check4 = false;
 	int n, perf = 0, fuzz[5] = { 0, 0, 0, 0, 0 };
-
-	rndval();
+	double lower = DBL_MIN, upper = DBL_MAX;
 
 	for(arg = argv + 1; *arg != NULL; ) {
 		if(opt_num(&arg, "fuzz0", &n))
@@ -83,6 +83,10 @@ int main(int argc, char **argv)
 			fuzz[4] = n;
 		else if(opt_num(&arg, "perf", &n))
 			perf = n;
+		else if(opt_real(&arg, "lower", &lower))
+			;
+		else if(opt_real(&arg, "upper", &upper))
+			;
 		else if(opt_long(&arg, "enum3", NULL))
 			enum3 = true;
 		else if(opt_long(&arg, "enum4", NULL))
@@ -94,6 +98,13 @@ int main(int argc, char **argv)
 		else
 			fprintf(stderr, "Invalid option '%s'.\n", *arg), abort();
 	}
+
+	if(lower < DBL_MIN || DBL_MAX < upper || !(lower <= upper)) {
+		fprintf(stderr, "Invalid interval [%g, %g].\n", lower, upper);
+		exit(1);
+	}
+
+	rndval(lower, upper);
 
 	for(n = 0; n < 5; n++) {
 		unsigned int i, nfail = 0, subopt = 0, notbest = 0;
@@ -112,7 +123,7 @@ int main(int argc, char **argv)
 				fflush(stdout);
 			}
 
-			val = rndval();
+			val = rndval(lower, upper);
 			exp = errolN_proc(n, val, str, &opt);
 			chk = chk_conv(val, str, exp, &cor, &opt, &best);
 
@@ -152,7 +163,7 @@ int main(int argc, char **argv)
 				double val;
 				bool suc;
 
-				val = rndval();
+				val = rndval(lower, upper);
 
 				dragon4all[i][j] = dragon4_bench(val, &suc);
 				errolNall[0][i][j] = errolN_bench(0, val, &suc);
@@ -168,7 +179,7 @@ int main(int argc, char **argv)
 		reseed(seed);
 
 		for(i = 0; i < perf; i++) {
-			double val = rndval();
+			double val = rndval(lower, upper);
 			uint32_t dragon4tm = 0, grisu3tm = 0, errolNtm[5] = { 0, 0, 0, 0, 0 }, adj3tm = 0;
 
 			qsort(dragon4all[i], N, sizeof(uint32_t), intsort);
@@ -284,7 +295,7 @@ static bool opt_long(char ***arg, const char *pre, char **param)
  * Retrieve an integer argument.
  *   @arg: The argument pointer.
  *   @pre: The option to match.
- *   @parameter: Optional. The parameter pointer.
+ *   @parameter: The parameter pointer.
  *   &returns: True if matched with argument incremented.
  */
 
@@ -310,6 +321,33 @@ static bool opt_num(char ***arg, const char *pre, int *num)
 		fprintf(stderr, "Invalid %s parameter '%s'.\n", pre, param), abort();
 	else if(val > INT_MAX)
 		fprintf(stderr, "Number too large '%s'.\n", param), abort();
+
+	*num = val;
+
+	return true;
+}
+
+/**
+ * Retrieve a floating point argument.
+ *   @arg: The argument pointer.
+ *   @pre: The option to match.
+ *   @parameter: The parameter pointer.
+ *   &returns: True if matched with argument incremented.
+ */
+
+static bool opt_real(char ***arg, const char *pre, double *num)
+{
+	double val;
+	char *param, *endptr;
+
+	if(!opt_long(arg, pre, &param))
+		return false;
+
+	errno = 0;
+	val = strtod(param, &endptr);
+
+	if((errno != 0) || (*endptr != '\0'))
+		fprintf(stderr, "Invalid %s parameter '%s'.\n", pre, param), abort();
 
 	*num = val;
 
