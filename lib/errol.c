@@ -597,11 +597,10 @@ int errol_int(double val, char *buf)
 
 		for(j = 0; ((high != 0) && (j < 19)) || ((high == 0) && (h64 != 0)); j++, i--) {
 			lstr[i] = '0' + l64 % (uint64_t)10;
-			mstr[i] = '0' + m64 % (uint64_t)10;
-			hstr[i] = '0' + h64 % (uint64_t)10;
-
 			l64 /= 10;
+			mstr[i] = '0' + m64 % (uint64_t)10;
 			m64 /= 10;
+			hstr[i] = '0' + h64 % (uint64_t)10;
 			h64 /= 10;
 		}
 	}
