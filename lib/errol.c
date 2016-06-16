@@ -630,36 +630,38 @@ int errol_fixed(double val, char *buf)
 	char *p;
 	int j, exp;
 	double n, mid, lo, hi;
+	uint64_t u;
 
 	assert((val >= 16.0) && (val < 9.007199254740992e15));
 
-	n = floor(val);
+	u = (uint64_t)val;
+	n = (double)u;
 
 	mid = val - n;
 	lo = ((fpprev(val) - n) + mid) / 2.0;
 	hi = ((fpnext(val) - n) + mid) / 2.0;
 
-	p = u64toa((uint64_t)n, buf);
+	p = u64toa(u, buf);
 	j = exp = p - buf;
 	buf[j] = '\0';
 
 	if(mid != 0.0) {
 		while(mid != 0.0) {
-			char ldig, mdig, hdig;
+			int ldig, mdig, hdig;
 
 			lo *= 10.0;
-			ldig = (uint8_t)lo + '0';
-			lo = fmod(lo, 1.0);
+			ldig = (int)lo;
+			lo -= ldig;
 
 			mid *= 10.0;
-			mdig = (uint8_t)mid + '0';
-			mid = fmod(mid, 1.0);
+			mdig = (int)mid;
+			mid -= mdig;
 
 			hi *= 10.0;
-			hdig = (uint8_t)hi + '0';
-			hi = fmod(hi, 1.0);
+			hdig = (int)hi;
+			hi -= hdig;
 
-			buf[j++] = mdig;
+			buf[j++] = mdig + '0';
 
 			if(hdig != ldig || j > 50)
 				break;
