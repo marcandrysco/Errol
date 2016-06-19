@@ -62,6 +62,7 @@ static void inline hp_normalize(struct hp_t *hp);
 static void inline hp_mul10(struct hp_t *hp);
 static void inline hp_div10(struct hp_t *hp);
 static struct hp_t hp_prod(struct hp_t in, double val);
+static int inline mismatch10(uint64_t a, uint64_t b);
 static int inline table_lower_bound(uint64_t *table, int n, uint64_t k);
 
 /*
@@ -564,11 +565,8 @@ int errol4u_dtoa(double val, char *buf)
 
 int errol_int(double val, char *buf)
 {
-	int8_t i, j;
-	int32_t exp;
-	union { double d; uint64_t i; } bits;
-	char lstr[42], hstr[42], mstr[41];
-	uint64_t l64, m64, h64;
+	int exp;
+	errol_bits_t bits;
 	__uint128_t low, mid, high;
 	static __uint128_t pow19 = (__uint128_t)1e19;
 
@@ -584,35 +582,36 @@ int errol_int(double val, char *buf)
 	else
 		low--;
 
-	i = 39;
-	lstr[41] = hstr[41] = mstr[40] = '\0';
-	lstr[40] = hstr[40] = '5';
-	while(high != 0) {
-		l64 = low % pow19;
-		low /= pow19;
-		m64 = mid % pow19;
-		mid /= pow19;
-		h64 = high % pow19;
-		high /= pow19;
+	uint64_t l64 = low % pow19;
+	uint64_t lf = (low / pow19) % pow19;
+	uint64_t h64 = high % pow19;
+	uint64_t hf = (high / pow19) % pow19;
 
-		for(j = 0; ((high != 0) && (j < 19)) || ((high == 0) && (h64 != 0)); j++, i--) {
-			lstr[i] = '0' + l64 % (uint64_t)10;
-			l64 /= 10;
-			mstr[i] = '0' + m64 % (uint64_t)10;
-			m64 /= 10;
-			hstr[i] = '0' + h64 % (uint64_t)10;
-			h64 /= 10;
-		}
+	if (lf != hf)
+	{
+		l64 = lf;
+		h64 = hf;
+		mid /= (pow19 / 10);
 	}
 
-	exp = 39 - i++;
+	int mi = mismatch10(l64, h64);
+	uint64_t x = 1;
+	for (int i = (lf == hf); i < mi; i++)
+		x *= 10;
+	uint64_t m64 = mid / x;
 
-	do
-		*buf++ = hstr[i++];
-	while(hstr[i] != '\0' && hstr[i] == lstr[i]);
+	if (lf != hf)
+		mi += 19;
 
-	*buf++ = mstr[i] + ((mstr[i+1] >= '5') ? 1 : 0);
-	*buf = '\0';
+	char *p = u64toa(m64, buf) - 1;
+
+	if (mi != 0)
+		p[-1] += (*p >= '5');
+	else
+		++p;
+
+	exp = p - buf + mi;
+	*p = '\0';
 
 	return exp;
 }
@@ -786,6 +785,40 @@ static struct hp_t hp_prod(struct hp_t in, double val)
 	e = ((hi * hi2 - p) + lo * hi2 + hi * lo2) + lo * lo2;
 
 	return (struct hp_t){ p, in.off * val + e };
+}
+
+/**
+ * Given two different integers with the same length in terms of the number
+ * of decimal digits, index the digits from the right-most position starting
+ * from zero, find the first index where the digits in the two integers
+ * divergent starting from the highest index.
+ *   @a: Integer a.
+ *   @b: Integer b.
+ *   &returns: An index within [0, 19).
+ */
+
+static inline int mismatch10(uint64_t a, uint64_t b)
+{
+	uint64_t pow10 = 10000000000U;
+	uint64_t af = a / pow10;
+	uint64_t bf = b / pow10;
+	int i = 0;
+
+	if (af != bf)
+	{
+		i = 10;
+		a = af;
+		b = bf;
+	}
+
+	for (;; ++i)
+	{
+		a /= 10;
+		b /= 10;
+
+		if (a == b)
+			return i;
+	}
 }
 
 /**
