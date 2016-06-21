@@ -25,4 +25,4 @@ informed the POPL PC chair of the mistake, and the PC chair advised us to
 create a page like this one and update the PDF paper and corresponding talk.
 
 An updated version of the paper is available here:
-[http://cseweb.ucsd.edu/~mandrysc/pub/dtoa.pdf]().
+[https://cseweb.ucsd.edu/~mandrysc/pub/dtoa.pdf](https://cseweb.ucsd.edu/~mandrysc/pub/dtoa.pdf).
