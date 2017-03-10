@@ -80,6 +80,13 @@ static int inline table_lower_bound(uint64_t *table, int n, uint64_t k);
 extern inline char *u32toa(uint32_t value, char *buffer);
 extern inline char *u64toa(uint64_t value, char *buffer);
 
+/*
+ * intrinsics
+ */
+
+extern __uint128_t __udivmodti4(__uint128_t a, __uint128_t b,
+                                __uint128_t* rem);
+
 
 /**
  * Errol0 double to ASCII conversion, guaranteed correct but possibly not
@@ -306,12 +313,13 @@ int16_t errol2_dtoa(double val, char *buf, bool *opt)
 	lstr[41] = hstr[41] = mstr[40] = '\0';
 	lstr[40] = hstr[40] = '5';
 	while(high != 0) {
-		l64 = low % pow19;
-		low /= pow19;
-		m64 = mid % pow19;
-		mid /= pow19;
-		h64 = high % pow19;
-		high /= pow19;
+		__uint128_t tmp1;
+		low = __udivmodti4(low, pow19, &tmp1);
+		l64 = tmp1;
+		mid = __udivmodti4(mid, pow19, &tmp1);
+		m64 = tmp1;
+		high = __udivmodti4(high, pow19, &tmp1);
+		h64 = tmp1;
 
 		for(j = 0; ((high != 0) && (j < 19)) || ((high == 0) && (h64 != 0)); j++, i--) {
 			lstr[i] = '0' + l64 % (uint64_t)10;
@@ -590,23 +598,26 @@ int errol_int(double val, char *buf)
 	else
 		low--;
 
-	uint64_t l64 = low % pow19;
-	uint64_t lf = (low / pow19) % pow19;
-	uint64_t h64 = high % pow19;
-	uint64_t hf = (high / pow19) % pow19;
+	__uint128_t tmp1, tmp2;
+	__udivmodti4(__udivmodti4(low, pow19, &tmp1), pow19, &tmp2);
+	uint64_t l64 = tmp1;
+	uint64_t lf = tmp2;
+	__udivmodti4(__udivmodti4(high, pow19, &tmp1), pow19, &tmp2);
+	uint64_t h64 = tmp1;
+	uint64_t hf = tmp2;
 
 	if (lf != hf)
 	{
 		l64 = lf;
 		h64 = hf;
-		mid /= (pow19 / 10);
+		mid = __udivmodti4(mid, pow19 / 10, NULL);
 	}
 
 	int mi = mismatch10(l64, h64);
 	uint64_t x = 1;
 	for (int i = (lf == hf); i < mi; i++)
 		x *= 10;
-	uint64_t m64 = mid / x;
+	uint64_t m64 = __udivmodti4(mid, x, NULL);
 
 	if (lf != hf)
 		mi += 19;
