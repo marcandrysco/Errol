@@ -2,9 +2,10 @@
 
 CC      = gcc
 CXX     = g++
-LD      = gcc
-CFLAGS  = -g -O2 -Wall -Werror
-LDFLAGS = -lm -L../lib -L../grisu -static -lerrol -ldouble-conversion -lm -lgmp
+LD      = g++
+CFLAGS  = -g -O2 -Wall -Werror -I../lib
+CXXFLAGS= -g -O2 -std=c++11 -Wall -Werror -I../lib -I../grisu/include
+LDFLAGS = -L../lib -L../grisu/lib -static -lerrol -ldouble-conversion -lm -lgmp
 AR      = ar rcs
 
 BIN  = errol-test
@@ -24,16 +25,9 @@ $(BIN): $(OBJ)
 	$(LD) $^ -o $@ $(LDFLAGS)
 
 main.o: main.c Makefile $(INC) $(DEP)
-	$(CC) -c $< -o $@ $(CFLAGS)
-
 proof.o: proof.c Makefile $(INC) $(DEP)
-	$(CC) -c $< -o $@ $(CFLAGS)
-
 interop.o: interop.cpp Makefile $(INC) $(DEP)
-	$(CXX) -c $< -o $@ $(CFLAGS)
-
 dragon4.o: dragon4.c Makefile $(INC) $(DEP)
-	$(CC) -c $< -o $@ $(CFLAGS)
 
 ## Clean rules
 

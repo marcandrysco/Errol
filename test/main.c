@@ -7,11 +7,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
-#include <sys/time.h>
-#include "../lib/errol.h"
+#include <errol.h>
 #include <gmp.h>
+#include <inttypes.h>
 
 
 /*
@@ -20,20 +19,24 @@
 
 static bool opt_long(char ***arg, const char *pre, char **value);
 static bool opt_num(char ***arg, const char *pre, int *num);
-
-static void rndinit();
-static double rndval();
+static bool opt_real(char ***arg, const char *pre, double *num);
 
 static int intsort(const void *left, const void *right);
+static int err_t_sort(const void *left, const void *right);
 
 static double chk_conv(double val, const char *str, int32_t exp, bool *cor, bool *opt, bool *best);
 
-static void table_add(struct errol_err_t table[1024][4], double val);
+static void table_add(struct errol_err_t[static 1024], int i, double val);
 static void table_enum(unsigned int ver, bool bld);
+static void table_to_tree(struct errol_err_t *table, int n);
 
 /*
  * interop function declarations
  */
+
+double rndval(double lower, double upper);
+void reseed(uint_fast64_t value);
+uint_fast64_t get_seed();
 
 int grisu3_proc(double val, char *buf, bool *suc);
 uint32_t grisu_bench(double val, bool *suc);
@@ -65,9 +68,7 @@ int main(int argc, char **argv)
 	char **arg;
 	bool quiet = false, enum3 = false, enum4 = false, check3 = false, check4 = false;
 	int n, perf = 0, fuzz[5] = { 0, 0, 0, 0, 0 };
-
-	rndinit();
-	rndval();
+	double lower = DBL_MIN, upper = DBL_MAX;
 
 	for(arg = argv + 1; *arg != NULL; ) {
 		if(opt_num(&arg, "fuzz0", &n))
@@ -75,13 +76,17 @@ int main(int argc, char **argv)
 		else if(opt_num(&arg, "fuzz1", &n))
 			fuzz[1] = n;
 		else if(opt_num(&arg, "fuzz2", &n))
-			fuzz[3] = n;
+			fuzz[2] = n;
 		else if(opt_num(&arg, "fuzz3", &n))
 			fuzz[3] = n;
 		else if(opt_num(&arg, "fuzz4", &n))
 			fuzz[4] = n;
 		else if(opt_num(&arg, "perf", &n))
 			perf = n;
+		else if(opt_real(&arg, "lower", &lower))
+			;
+		else if(opt_real(&arg, "upper", &upper))
+			;
 		else if(opt_long(&arg, "enum3", NULL))
 			enum3 = true;
 		else if(opt_long(&arg, "enum4", NULL))
@@ -93,6 +98,13 @@ int main(int argc, char **argv)
 		else
 			fprintf(stderr, "Invalid option '%s'.\n", *arg), abort();
 	}
+
+	if(lower < DBL_MIN || DBL_MAX < upper || !(lower <= upper)) {
+		fprintf(stderr, "Invalid interval [%g, %g].\n", lower, upper);
+		exit(1);
+	}
+
+	rndval(lower, upper);
 
 	for(n = 0; n < 5; n++) {
 		unsigned int i, nfail = 0, subopt = 0, notbest = 0;
@@ -111,7 +123,7 @@ int main(int argc, char **argv)
 				fflush(stdout);
 			}
 
-			val = rndval();
+			val = rndval(lower, upper);
 			exp = errolN_proc(n, val, str, &opt);
 			chk = chk_conv(val, str, exp, &cor, &opt, &best);
 
@@ -137,7 +149,7 @@ int main(int argc, char **argv)
 #define Nhigh	(N - Nlow)
 #define Nsize	(Nhigh - Nlow)
 
-		uint32_t seed = time(NULL);
+		uint_fast64_t seed = get_seed();
 		uint32_t dragon4 = 0, grisu3 = 0, errol[5] = { 0, 0, 0, 0, 0 }, adj3 = 0;
 		unsigned int i, j;
 		static uint32_t dragon4all[20000][N], grisu3all[20000][N], errolNall[5][20000][N], adj3all[20000][N];
@@ -146,12 +158,12 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Cannot support more than 20k performance numberss.\n"), abort();
 
 		for(j = 0; j < N; j++) {
-			srand(seed);
+			reseed(seed);
 			for(i = 0; i < perf; i++) {
 				double val;
 				bool suc;
 
-				val = rndval();
+				val = rndval(lower, upper);
 
 				dragon4all[i][j] = dragon4_bench(val, &suc);
 				errolNall[0][i][j] = errolN_bench(0, val, &suc);
@@ -164,10 +176,10 @@ int main(int argc, char **argv)
 			}
 		}
 
-		srand(seed);
+		reseed(seed);
 
 		for(i = 0; i < perf; i++) {
-			double val = rndval();
+			double val = rndval(lower, upper);
 			uint32_t dragon4tm = 0, grisu3tm = 0, errolNtm[5] = { 0, 0, 0, 0, 0 }, adj3tm = 0;
 
 			qsort(dragon4all[i], N, sizeof(uint32_t), intsort);
@@ -283,14 +295,14 @@ static bool opt_long(char ***arg, const char *pre, char **param)
  * Retrieve an integer argument.
  *   @arg: The argument pointer.
  *   @pre: The option to match.
- *   @parameter: Optional. The parameter pointer.
+ *   @parameter: The parameter pointer.
  *   &returns: True if matched with argument incremented.
  */
 
 static bool opt_num(char ***arg, const char *pre, int *num)
 {
 	unsigned long val;
-	char *param, *value, *endptr;
+	char *param, *endptr;
 
 	if(!opt_long(arg, pre, &param))
 		return false;
@@ -306,49 +318,40 @@ static bool opt_num(char ***arg, const char *pre, int *num)
 		val *= 1000000, endptr++;
 
 	if(((val == 0) && (errno != 0)) || (*endptr != '\0'))
-		fprintf(stderr, "Invalid %s parameter '%s'.\n", pre, value), abort();
+		fprintf(stderr, "Invalid %s parameter '%s'.\n", pre, param), abort();
 	else if(val > INT_MAX)
-		fprintf(stderr, "Number too large '%s'.\n", value), abort();
+		fprintf(stderr, "Number too large '%s'.\n", param), abort();
 
 	*num = val;
 
 	return true;
 }
 
-
 /**
- * Initialize the random number generator.
+ * Retrieve a floating point argument.
+ *   @arg: The argument pointer.
+ *   @pre: The option to match.
+ *   @parameter: The parameter pointer.
+ *   &returns: True if matched with argument incremented.
  */
 
-static void rndinit()
+static bool opt_real(char ***arg, const char *pre, double *num)
 {
-	struct timeval tv;
+	double val;
+	char *param, *endptr;
 
-	gettimeofday(&tv, NULL);
-	srand(1000000 * (int64_t)tv.tv_sec + (int64_t)tv.tv_usec);
-}
+	if(!opt_long(arg, pre, &param))
+		return false;
 
-/**
- * Create a random double value. The random value is always positive, non-zero, not
- * infinity, and non-NaN.
- *   &returns: The random double.
- */
+	errno = 0;
+	val = strtod(param, &endptr);
 
-static double rndval()
-{
-	union {
-		double d;
-		uint16_t arr[4];
-	} val;
+	if((errno != 0) || (*endptr != '\0'))
+		fprintf(stderr, "Invalid %s parameter '%s'.\n", pre, param), abort();
 
-	do {
-		val.arr[0] = rand();
-		val.arr[1] = rand();
-		val.arr[2] = rand();
-		val.arr[3] = rand() & ~(0x8000);
-	} while(isnan(val.d) || (val.d == 0.0) || !isfinite(val.d));
+	*num = val;
 
-	return val.d;
+	return true;
 }
 
 
@@ -367,6 +370,26 @@ static int intsort(const void *left, const void *right)
 		return 1;
 	else
 		return 0;
+}
+
+/**
+ * Sort errol_err_t in terms of bit patterns of the floating points.
+ *   @left: The left pointer.
+ *   @right: The right pointer.
+ *   &returns: The order.
+ */
+
+static int err_t_sort(const void *left, const void *right)
+{
+	errol_bits_t l = { ((struct errol_err_t *)left)->val };
+	errol_bits_t r = { ((struct errol_err_t *)right)->val };
+
+	if (l.i < r.i)
+		return -1;
+	else if (l.i == r.i)
+		return 0;
+	else
+		return 1;
 }
 
 
@@ -403,27 +426,14 @@ static double chk_conv(double val, const char *str, int32_t exp, bool *cor, bool
 /**
  * Add to the table.
  *   @table: The table.
+ *   @i: Insertion point.
  *   @val: The value.
  */
 
-static void table_add(struct errol_err_t table[1024][4], double val)
+static void table_add(struct errol_err_t table[static 1024], int i, double val)
 {
-	int j;
-	uint16_t i;
-
-	i = errol_hash(val);
-
-	for(j = 0; j < 4; j++) {
-		if(table[i][j].val == 0.0)
-			break;
-	}
-
-	if(j == 4)
-		fprintf(stderr, "Too many values packed into a bin!\n");
-	else {
-		table[i][j] = (struct errol_err_t){ val };
-		table[i][j].exp = dragon4_proc(table[i][j].val, table[i][j].str);
-	}
+	table[i] = (struct errol_err_t){ val };
+	table[i].exp = dragon4_proc(table[i].val, table[i].str);
 }
 
 /**
@@ -437,7 +447,7 @@ static void table_enum(unsigned int ver, bool bld)
 	int i, e, n, p, exp, cnt = 0;
 	int64_t *arr;
 	mpz_t delta, m0, alpha, tau, t;
-	struct errol_err_t table[1024][4] = { 0 };
+	struct errol_err_t table[1024] = {{ 0 }};
 	static unsigned int D = 17, P = 52;
 
 	assert((ver == 3) || (ver == 4));
@@ -494,11 +504,11 @@ static void table_enum(unsigned int ver, bool bld)
 
 			v = ldexp(1.0, e) + ldexp(arr[i], e-52);
 			if(!(bld ? errolNu_check : errolN_check)(ver, v))
-				table_add(table, v), cnt++;
+				table_add(table, cnt++, v);
 
 			v = ldexp(1.0, e) + ldexp(arr[i]+1, e-52);
 			if(!(bld ? errolNu_check : errolN_check)(ver, v))
-				table_add(table, v), cnt++;
+				table_add(table, cnt++, v);
 		}
 
 		free(arr);
@@ -545,11 +555,11 @@ static void table_enum(unsigned int ver, bool bld)
 
 			v = ldexp(1.0, e) + ldexp(arr[i], e-52);
 			if(!(bld ? errolNu_check : errolN_check)(ver, v))
-				table_add(table, v), cnt++;
+				table_add(table, cnt++, v);
 
 			v = ldexp(1.0, e) + ldexp(arr[i]+1, e-52);
 			if(!(bld ? errolNu_check : errolN_check)(ver, v))
-				table_add(table, v), cnt++;
+				table_add(table, cnt++, v);
 		}
 
 		free(arr);
@@ -558,24 +568,30 @@ static void table_enum(unsigned int ver, bool bld)
 	mpz_clears(delta, m0, alpha, tau, t, NULL);
 
 	if(!(bld ? errolNu_check : errolN_check)(ver, DBL_MIN))
-		table_add(table, DBL_MIN), cnt++;
+		table_add(table, cnt++, DBL_MIN);
 
 	if(!(bld ? errolNu_check : errolN_check)(ver, DBL_MAX))
-		table_add(table, DBL_MAX), cnt++;
+		table_add(table, cnt++, DBL_MAX);
 
 	if(bld) {
 		FILE *file;
 
-		file = fopen((ver == 3) ? "enum3.h" : "enum4.h", "w");
-		fprintf(file, "struct errol_err_t errol_enum%d[1024][4] = {\n", ver);
+		qsort(table, cnt, sizeof(struct errol_err_t), err_t_sort);
+		table_to_tree(table, cnt);
 
-		for(i = 0; i < 512; i++) {
-			fprintf(file, "\t{ ");
-			fprintf(file, "{ %.17e, \"%s\", %d }, ", table[i][0].val, table[i][0].str, table[i][0].exp);
-			fprintf(file, "{ %.17e, \"%s\", %d }, ", table[i][1].val, table[i][1].str, table[i][1].exp);
-			fprintf(file, "{ %.17e, \"%s\", %d }, ", table[i][2].val, table[i][2].str, table[i][2].exp);
-			fprintf(file, "{ %.17e, \"%s\", %d }", table[i][3].val, table[i][3].str, table[i][3].exp);
-			fprintf(file, "},\n");
+		file = fopen((ver == 3) ? "enum3.h" : "enum4.h", "w");
+		fprintf(file, "static uint64_t errol_enum%d[%d] = {\n", ver, cnt);
+
+		for(i = 0; i < cnt; i++) {
+			errol_bits_t bits = { table[i].val };
+			fprintf(file, "\t%#.16" PRIx64 ",\n", bits.i);
+		}
+
+		fprintf(file, "};\n");
+		fprintf(file, "static struct errol_slab_t errol_enum%d_data[%d] = {\n", ver, cnt);
+
+		for(i = 0; i < cnt; i++) {
+			fprintf(file, "\t{ \"%s\", %d },\n", table[i].str, table[i].exp);
 		}
 
 		fprintf(file, "};\n");
@@ -583,13 +599,65 @@ static void table_enum(unsigned int ver, bool bld)
 	}
 	else {
 		for(i = 0; i < 1024; i++) {
-			if(table[i][0].val != 0.0)
-				printf("Failed value %.17e\n", table[i][0].val);
+			if(table[i].val != 0.0)
+				printf("Failed value %.17e\n", table[i].val);
 
-			if(table[i][1].val != 0.0)
-				printf("Failed value %.17e\n", table[i][1].val);
+			if(table[i].val != 0.0)
+				printf("Failed value %.17e\n", table[i].val);
 		}
 	}
 
 	printf("Enumerating Errol%u%s, %u failures\n", ver, bld ? "u" : "", cnt);
+}
+
+/**
+ * Calculate the index of the root node when reordering a sorted array to
+ * the level-order of a binary search tree.
+ *   @n: Array size.
+ *   &returns: The index.
+ */
+
+static inline int table_root(int n)
+{
+	if (n <= 1)
+		return 0;
+	int i = 2;
+	while (i <= n)
+		i *= 2;
+	int a = i / 2 - 1;
+	int b = n - i / 4;
+	return a < b ? a : b;
+}
+
+/**
+ * Insert all elements in a sorted array to another array in level-order.
+ *   @table: The destination.
+ *   @i: Insertion point.
+ *   @from: The source.
+ *   @n: Array size.
+ */
+
+static void table_to_tree_iter(struct errol_err_t *table, int i,
+                               struct errol_err_t *from, int n)
+{
+	if (n > 0)
+	{
+		int h = table_root(n);
+		table[i] = from[h];
+		table_to_tree_iter(table, 2 * i + 1, from, h);
+		table_to_tree_iter(table, 2 * i + 2, from + h + 1, n - h - 1);
+	}
+}
+
+/**
+ * Reorder a sorted array to the level-order of a binary search tree.
+ *   @table: The input array.
+ *   @n: Array size.
+ */
+
+static void table_to_tree(struct errol_err_t *table, int n)
+{
+	struct errol_err_t from[1024];
+	memcpy(from, table, n * sizeof(struct errol_err_t));
+	table_to_tree_iter(table, 0, from, n);
 }

@@ -2,11 +2,23 @@
 import os
 
 double_conversion_sources = ['src/' + x for x in SConscript('src/SConscript')]
+double_conversion_headers = ['src/' + x for x in [
+    'bignum.h',
+    'cached-powers.h',
+    'diy-fp.h',
+    'double-conversion.h',
+    'fast-dtoa.h',
+    'fixed-dtoa.h',
+    'ieee.h',
+    'strtod.h',
+    'utils.h']]
 
+library_name = 'double-conversion'
 DESTDIR = ARGUMENTS.get('DESTDIR', '')
 prefix = ARGUMENTS.get('prefix', '/usr/local')
 lib = ARGUMENTS.get('libsuffix', 'lib')
 libdir = os.path.join(DESTDIR + prefix, lib)
+incdir = os.path.join(DESTDIR + prefix, 'include', library_name)
 
 env = Environment(CPPPATH='#/src', LIBS=['m', 'stdc++'],
     CXXFLAGS=ARGUMENTS.get('CXXFLAGS', ''))
@@ -30,14 +42,9 @@ double_conversion_shared_objects = [
 double_conversion_static_objects = [
     env.StaticObject(src) for src in double_conversion_sources]
 
-library_name = 'double-conversion'
-
 static_lib = env.StaticLibrary(library_name, double_conversion_static_objects)
-static_lib_pic = env.StaticLibrary(library_name + '_pic', double_conversion_shared_objects)
-shared_lib = env.SharedLibrary(library_name, double_conversion_shared_objects)
 
-env.InstallVersionedLib(libdir, shared_lib)
 env.Install(libdir, static_lib)
-env.Install(libdir, static_lib_pic)
+env.Install(incdir, double_conversion_headers)
 
-env.Alias('install', libdir)
+env.Alias('install', [incdir, libdir])

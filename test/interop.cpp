@@ -1,8 +1,11 @@
-#include "../grisu/src/fast-dtoa.h"
-#include "../lib/errol.h"
+#include <double-conversion/fast-dtoa.h>
+#include <errol.h>
 #include "dragon4.h"
 #include <stdio.h>
 #include <string.h>
+#include <cmath>
+#include <random>
+#include <immintrin.h>
 
 /*
  * namespaces
@@ -27,6 +30,62 @@ static inline uint64_t rdtsc()
 			: "%rcx", "%rbx", "memory");
 
 	return ((uint64_t)a) | (((uint64_t)d) << 32);
+}
+
+
+/**
+ * Retrieve a 64-bit seed from CPU.
+ *   &returns: An integer with an unpredictable value.
+ */
+
+extern "C" uint_fast64_t get_seed()
+{
+#if defined(__RDRND__)
+	unsigned long long v;
+	_rdrand64_step(&v);
+	return v;
+#else
+	return rdtsc() ^ (uint_fast64_t(std::random_device{}()) << 32);
+#endif
+}
+
+
+/**
+ * Initialize the global random engine.
+ *   &returns: The engine.
+ */
+
+inline std::mt19937_64& global_rng()
+{
+	static std::mt19937_64 e{ get_seed() };
+	return e;
+}
+
+
+/**
+ * Create a random double value.
+ *   @upper: Minimum floating point value.
+ *   @lower: Maximum floating point value.
+ *   &returns: The random double.
+ */
+
+extern "C" double rndval(double lower, double upper)
+{
+	errol_bits_t a = { lower }, b = { upper };
+	std::uniform_int_distribution<uint64_t> dist(a.i, b.i);
+	errol_bits_t r = { .i = dist(global_rng()) };
+	return r.d;
+}
+
+
+/**
+ * Seed the global random engine.
+ *   @value: The seed to use.
+ */
+
+extern "C" void reseed(uint_fast64_t value)
+{
+	global_rng().seed(value);
 }
 
 

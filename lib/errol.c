@@ -6,16 +6,35 @@
 #include <stdlib.h>
 #include <string.h>
 #include "errol.h"
+#include "itoa_c.h"
 
 /*
  * floating point format definitions
  */
 
 typedef double fpnum_t;
-#define FP_MAX DOUBLE_MAX
-#define FP_MIN DOUBLE_MIN
-#define fpnext(val) nextafter(val, INFINITY)
-#define fpprev(val) nextafter(val, -INFINITY)
+
+static inline double fpnext(double val)
+{
+	errol_bits_t bits = { val };
+	bits.i++;
+	return bits.d;
+}
+
+static inline double fpprev(double val)
+{
+	errol_bits_t bits = { val };
+	bits.i--;
+	return bits.d;
+}
+
+static inline __uint128_t fpeint(double from)
+{
+	errol_bits_t bits = { from };
+	assert((bits.i & ((1ULL << 52) - 1)) == 0);
+
+	return (__uint128_t)1 << ((bits.i >> 52) - 1023);
+}
 
 #define ERROL0_EPSILON	0.0000001
 #define ERROL1_EPSILON  8.77e-15
@@ -49,8 +68,24 @@ struct hp_t {
 
 static void inline hp_normalize(struct hp_t *hp);
 static void inline hp_mul10(struct hp_t *hp);
-static void hp_div10(struct hp_t *hp);
-struct hp_t hp_prod(struct hp_t in, double val);
+static void inline hp_div10(struct hp_t *hp);
+static struct hp_t hp_prod(struct hp_t in, double val);
+static int inline mismatch10(uint64_t a, uint64_t b);
+static int inline table_lower_bound(uint64_t *table, int n, uint64_t k);
+
+/*
+ * inline function instantiations
+ */
+
+extern inline char *u32toa(uint32_t value, char *buffer);
+extern inline char *u64toa(uint64_t value, char *buffer);
+
+/*
+ * intrinsics
+ */
+
+extern __uint128_t __udivmodti4(__uint128_t a, __uint128_t b,
+                                __uint128_t* rem);
 
 
 /**
@@ -265,8 +300,8 @@ int16_t errol2_dtoa(double val, char *buf, bool *opt)
 	__uint128_t low, mid, high, pow19 = (__uint128_t)1e19;
 
 	mid = (__uint128_t)val;
-	low = mid - (__uint128_t)((nextafter(val, INFINITY) -val) / 2.0);
-	high = mid + (__uint128_t)((val - nextafter(val, -INFINITY)) / 2.0);
+	low = mid - fpeint((fpnext(val) - val) / 2.0);
+	high = mid + fpeint((val - fpprev(val)) / 2.0);
 
 	bits.d = val;
 	if(bits.i & 0x1)
@@ -278,12 +313,13 @@ int16_t errol2_dtoa(double val, char *buf, bool *opt)
 	lstr[41] = hstr[41] = mstr[40] = '\0';
 	lstr[40] = hstr[40] = '5';
 	while(high != 0) {
-		l64 = low % pow19;
-		low /= pow19;
-		m64 = mid % pow19;
-		mid /= pow19;
-		h64 = high % pow19;
-		high /= pow19;
+		__uint128_t tmp1;
+		low = __udivmodti4(low, pow19, &tmp1);
+		l64 = tmp1;
+		mid = __udivmodti4(mid, pow19, &tmp1);
+		m64 = tmp1;
+		high = __udivmodti4(high, pow19, &tmp1);
+		h64 = tmp1;
 
 		for(j = 0; ((high != 0) && (j < 19)) || ((high == 0) && (h64 != 0)); j++, i--) {
 			lstr[i] = '0' + l64 % (uint64_t)10;
@@ -320,32 +356,17 @@ int16_t errol2_dtoa(double val, char *buf, bool *opt)
 
 int errol3_dtoa(double val, char *buf)
 {
-	uint16_t i;
+	errol_bits_t k = { val };
 
-	i = errol_hash(val);
-
-	if(errol_enum3[i][0].val == val) {
-		strcpy(buf, errol_enum3[i][0].str);
-
-		return errol_enum3[i][0].exp;
+	int n = sizeof(errol_enum3) / sizeof(uint64_t);
+	int i = table_lower_bound(errol_enum3, n, k.i);
+	if (i < n && errol_enum3[i] == k.i)
+	{
+		strcpy(buf, errol_enum3_data[i].str);
+		return errol_enum3_data[i].exp;
 	}
-	else if(errol_enum3[i][1].val == val) {
-		strcpy(buf, errol_enum3[i][1].str);
 
-		return errol_enum3[i][1].exp;
-	}
-	else if(errol_enum3[i][2].val == val) {
-		strcpy(buf, errol_enum3[i][2].str);
-
-		return errol_enum3[i][2].exp;
-	}
-	else if(errol_enum3[i][3].val == val) {
-		strcpy(buf, errol_enum3[i][3].str);
-
-		return errol_enum3[i][3].exp;
-	}
-	else
-		return errol3u_dtoa(val, buf);
+	return errol3u_dtoa(val, buf);
 }
 
 /**
@@ -457,19 +478,14 @@ int errol3u_dtoa(double val, char *buf)
 
 int errol4_dtoa(double val, char *buf)
 {
-	int j;
-	uint16_t i;
+	errol_bits_t k = { val };
 
-	i = errol_hash(val);
-
-	for(j = 0; j < 4; j++) {
-		if(errol_enum4[i][j].val == 0.0)
-			break;
-		else if(errol_enum4[i][j].val == val) {
-			strcpy(buf, errol_enum4[i][j].str);
-
-			return errol_enum4[i][j].exp;
-		}
+	int n = sizeof(errol_enum4) / sizeof(uint64_t);
+	int i = table_lower_bound(errol_enum4, n, k.i);
+	if (i < n && errol_enum4[i] == k.i)
+	{
+		strcpy(buf, errol_enum4_data[i].str);
+		return errol_enum4_data[i].exp;
 	}
 
 	return errol4u_dtoa(val, buf);
@@ -528,7 +544,6 @@ int errol4u_dtoa(double val, char *buf)
 		exp--, hp_mul10(&mid), ten *= 10.0;
 
 	double diff = (fpnext(val) - val) * lten * ten / 2.0;
-	int i = 0;
 	uint64_t val64 = (uint64_t)mid.val;
 	uint64_t lo64 = val64 + (uint64_t)floor(mid.off - diff);
 	uint64_t mid64;
@@ -536,8 +551,6 @@ int errol4u_dtoa(double val, char *buf)
 
 	if(hi64 >= 1e18)
 		exp++;
-
-	uint8_t tmp[32];
 
 	uint64_t iten;
 	for(iten = 1; ; iten *= 10) {
@@ -550,15 +563,8 @@ int errol4u_dtoa(double val, char *buf)
 
 	mid64 = (val64 + (uint64_t)floor(mid.off + iten * 0.5)) / iten;
 
-	while(hi64 > 0) {
-		tmp[i] = hi64 % 10;
-		hi64 /= 10;
-		i++;
-	}
-
-	for(i--; i >= 0; i--)
-		*buf++ = tmp[i] + '0';
-
+	if (hi64 > 0)
+		buf = u64toa(hi64, buf);
 	*buf++ = mid64 % 10 + '0';
 	*buf = '\0';
 
@@ -575,19 +581,16 @@ int errol4u_dtoa(double val, char *buf)
 
 int errol_int(double val, char *buf)
 {
-	int8_t i, j;
-	int32_t exp;
-	union { double d; uint64_t i; } bits;
-	char lstr[42], hstr[42], mstr[41];
-	uint64_t l64, m64, h64;
+	int exp;
+	errol_bits_t bits;
 	__uint128_t low, mid, high;
 	static __uint128_t pow19 = (__uint128_t)1e19;
 
 	assert((val >= 9.007199254740992e15) && val < (3.40282366920938e38));
 
 	mid = (__uint128_t)val;
-	low = mid - (__uint128_t)((nextafter(val, INFINITY) -val) / 2.0);
-	high = mid + (__uint128_t)((val - nextafter(val, -INFINITY)) / 2.0);
+	low = mid - fpeint((fpnext(val) - val) / 2.0);
+	high = mid + fpeint((val - fpprev(val)) / 2.0);
 
 	bits.d = val;
 	if(bits.i & 0x1)
@@ -595,36 +598,39 @@ int errol_int(double val, char *buf)
 	else
 		low--;
 
-	i = 39;
-	lstr[41] = hstr[41] = mstr[40] = '\0';
-	lstr[40] = hstr[40] = '5';
-	while(high != 0) {
-		l64 = low % pow19;
-		low /= pow19;
-		m64 = mid % pow19;
-		mid /= pow19;
-		h64 = high % pow19;
-		high /= pow19;
+	__uint128_t tmp1, tmp2;
+	__udivmodti4(__udivmodti4(low, pow19, &tmp1), pow19, &tmp2);
+	uint64_t l64 = tmp1;
+	uint64_t lf = tmp2;
+	__udivmodti4(__udivmodti4(high, pow19, &tmp1), pow19, &tmp2);
+	uint64_t h64 = tmp1;
+	uint64_t hf = tmp2;
 
-		for(j = 0; ((high != 0) && (j < 19)) || ((high == 0) && (h64 != 0)); j++, i--) {
-			lstr[i] = '0' + l64 % (uint64_t)10;
-			mstr[i] = '0' + m64 % (uint64_t)10;
-			hstr[i] = '0' + h64 % (uint64_t)10;
-
-			l64 /= 10;
-			m64 /= 10;
-			h64 /= 10;
-		}
+	if (lf != hf)
+	{
+		l64 = lf;
+		h64 = hf;
+		mid = __udivmodti4(mid, pow19 / 10, NULL);
 	}
 
-	exp = 39 - i++;
+	int mi = mismatch10(l64, h64);
+	uint64_t x = 1;
+	for (int i = (lf == hf); i < mi; i++)
+		x *= 10;
+	uint64_t m64 = __udivmodti4(mid, x, NULL);
 
-	do
-		*buf++ = hstr[i++];
-	while(hstr[i] != '\0' && hstr[i] == lstr[i]);
+	if (lf != hf)
+		mi += 19;
 
-	*buf++ = mstr[i] + ((mstr[i+1] >= '5') ? 1 : 0);
-	*buf = '\0';
+	char *p = u64toa(m64, buf) - 1;
+
+	if (mi != 0)
+		p[-1] += (*p >= '5');
+	else
+		++p;
+
+	exp = p - buf + mi;
+	*p = '\0';
 
 	return exp;
 }
@@ -638,68 +644,41 @@ int errol_int(double val, char *buf)
 
 int errol_fixed(double val, char *buf)
 {
-	char tmp[16];
-	int i, j, exp;
+	char *p;
+	int j, exp;
 	double n, mid, lo, hi;
+	uint64_t u;
 
 	assert((val >= 16.0) && (val < 9.007199254740992e15));
 
-	n = floor(val);
+	u = (uint64_t)val;
+	n = (double)u;
 
 	mid = val - n;
 	lo = ((fpprev(val) - n) + mid) / 2.0;
 	hi = ((fpnext(val) - n) + mid) / 2.0;
 
-	uint64_t ival = (uint64_t)n;
-	uint32_t lo32, hi32;
-
-	lo32 = ival % 1000000000ul;
-	hi32 = ival / 1000000000ul;
-	i= 0;
-	if(hi32 > 0) {
-		for(i = 0; i < 9; i++) {
-			tmp[i] = lo32 % 10;
-			lo32 /= 10;
-		}
-
-		while(hi32 > 0) {
-			tmp[i] = hi32 % 10;
-			hi32 /= 10;
-			i++;
-		}
-	}
-	else {
-		while(lo32 > 0) {
-			tmp[i] = lo32 % 10;
-			lo32 /= 10;
-			i++;
-		}
-	}
-
-	exp = i;
-
-	for(j = 0, i--; i >= 0; j++, i--)
-		buf[j] = tmp[i] + '0';
-
+	p = u64toa(u, buf);
+	j = exp = p - buf;
 	buf[j] = '\0';
 
 	if(mid != 0.0) {
 		while(mid != 0.0) {
-			char ldig, mdig, hdig;
+			int ldig, mdig, hdig;
 
 			lo *= 10.0;
-			ldig = (uint8_t)lo + '0';
-			lo = fmod(lo, 1.0);
+			ldig = (int)lo;
+			lo -= ldig;
 
 			mid *= 10.0;
-			mdig = (uint8_t)mid + '0';
-			mid = fmod(mid, 1.0);
+			mdig = (int)mid;
+			mid -= mdig;
 
 			hi *= 10.0;
-			hdig = (uint8_t)hi + '0';
-			hi = fmod(hi, 1.0);
+			hdig = (int)hi;
+			hi -= hdig;
 
-			buf[j++] = mdig;
+			buf[j++] = mdig + '0';
 
 			if(hdig != ldig || j > 50)
 				break;
@@ -720,22 +699,6 @@ int errol_fixed(double val, char *buf)
 	buf[j] = '\0';
 
 	return exp;
-}
-
-
-/**
- * Hash a floating-point number into 2^10 bins.
- *   @val: The value.
- *   &returns: The hash.
- */
-
-uint16_t errol_hash(double val)
-{
-	union { double d; uint32_t i[2]; } u;
-
-	u.d = val;
-
-	return ((u.i[1] >> 20) ^ (u.i[1] * 750363209) ^ (u.i[0] * 912123041)) & 0x1FF;
 }
 
 
@@ -778,7 +741,7 @@ static inline void hp_mul10(struct hp_t *hp)
  *   @hp: The high-precision number
  */
 
-static void hp_div10(struct hp_t *hp)
+static inline void hp_div10(struct hp_t *hp)
 {
 	double val = hp->val;
 
@@ -793,7 +756,7 @@ static void hp_div10(struct hp_t *hp)
 	hp_normalize(hp);
 }
 
-double gethi(double in)
+static inline double gethi(double in)
 {
 	union { double d; uint64_t i; } v = { .d = in };
 
@@ -810,7 +773,7 @@ double gethi(double in)
  *   @lo: The low bits.
  */
 
-void split(double val, double *hi, double *lo)
+static inline void split(double val, double *hi, double *lo)
 {
 	//double t = (134217728.0 + 1.0) * val;
 
@@ -829,7 +792,7 @@ void split(double val, double *hi, double *lo)
  *   &returns: The HP number.
  */
 
-struct hp_t hp_prod(struct hp_t in, double val)
+static struct hp_t hp_prod(struct hp_t in, double val)
 {
 	double p, hi, lo, e;
 
@@ -841,4 +804,64 @@ struct hp_t hp_prod(struct hp_t in, double val)
 	e = ((hi * hi2 - p) + lo * hi2 + hi * lo2) + lo * lo2;
 
 	return (struct hp_t){ p, in.off * val + e };
+}
+
+/**
+ * Given two different integers with the same length in terms of the number
+ * of decimal digits, index the digits from the right-most position starting
+ * from zero, find the first index where the digits in the two integers
+ * divergent starting from the highest index.
+ *   @a: Integer a.
+ *   @b: Integer b.
+ *   &returns: An index within [0, 19).
+ */
+
+static inline int mismatch10(uint64_t a, uint64_t b)
+{
+	uint64_t pow10 = 10000000000U;
+	uint64_t af = a / pow10;
+	uint64_t bf = b / pow10;
+	int i = 0;
+
+	if (af != bf)
+	{
+		i = 10;
+		a = af;
+		b = bf;
+	}
+
+	for (;; ++i)
+	{
+		a /= 10;
+		b /= 10;
+
+		if (a == b)
+			return i;
+	}
+}
+
+/**
+ * Find the insertion point for a key in a level-order array.
+ *   @table: The target array.
+ *   @n: Array size.
+ *   @k: The key to find.
+ *   &returns: The insertion point.
+ */
+
+static inline int table_lower_bound(uint64_t *table, int n, uint64_t k)
+{
+	int i = n, j = 0;
+
+	while (j < n)
+	{
+		if (table[j] < k)
+			j = 2 * j + 2;
+		else
+		{
+			i = j;
+			j = 2 * j + 1;
+		}
+	}
+
+	return i;
 }

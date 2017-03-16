@@ -30,3 +30,35 @@
 
 # Other
 run.sh
+
+# vim
+*~
+.*.swp
+
+# compiler
+*.s
+
+# generated files
+config.h
+
+# cmake
+build/
+Makefile
+/*.cmake
+CMakeCache.txt
+CMakeFiles/
+install_manifest.txt
+
+# ctest
+*.log
+Testing/
+DartConfiguration.tcl
+
+# Visual Studio
+/*.vcxproj
+/*.vcxproj.filters
+/*.vcxproj.user
+/*.dir/
+/*.sln
+/*.suo
+/*.sdf
