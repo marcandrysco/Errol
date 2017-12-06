@@ -18,9 +18,9 @@ extern "C" {
 #define ERR_LEN   512
 #define ERR_DEPTH 4
 
-int16_t errol0_dtoa(double val, char *buf);
-int16_t errol1_dtoa(double val, char *buf, bool *opt);
-int16_t errol2_dtoa(double val, char *buf, bool *opt);
+int errol0_dtoa(double val, char *buf);
+int errol1_dtoa(double val, char *buf, bool *opt);
+int errol2_dtoa(double val, char *buf, bool *opt);
 int errol3_dtoa(double val, char *buf);
 int errol3u_dtoa(double val, char *buf);
 int errol4_dtoa(double val, char *buf);

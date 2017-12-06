@@ -96,10 +96,10 @@ extern __uint128_t __udivmodti4(__uint128_t a, __uint128_t b,
  *   &returns: The exponent.
  */
 
-int16_t errol0_dtoa(double val, char *buf)
+int errol0_dtoa(double val, char *buf)
 {
 	double ten;
-	int16_t exp;
+	int exp;
 	struct hp_t mid, inhi, inlo;
 
 	ten = 1.0;
@@ -172,11 +172,11 @@ int16_t errol0_dtoa(double val, char *buf)
  *   &returns: The exponent.
  */
 
-int16_t errol1_dtoa(double val, char *buf, bool *opt)
+int errol1_dtoa(double val, char *buf, bool *opt)
 {
 	double ten, lten;
 	int e;
-	int16_t exp;
+	int exp;
 	struct hp_t mid, inhi, inlo, outhi, outlo;
 
 	if(val == DBL_MAX) {
@@ -287,13 +287,13 @@ int16_t errol1_dtoa(double val, char *buf, bool *opt)
  *   &returns: The exponent.
  */
 
-int16_t errol2_dtoa(double val, char *buf, bool *opt)
+int errol2_dtoa(double val, char *buf, bool *opt)
 {
 	if((val < 9.007199254740992e15) || (val >= 3.40282366920938e38))
 		return errol1_dtoa(val, buf, opt);
 
 	int8_t i, j;
-	int32_t exp;
+	int exp;
 	union { double d; uint64_t i; } bits;
 	char lstr[42], hstr[42], mstr[41];
 	uint64_t l64, m64, h64;
@@ -380,7 +380,7 @@ int errol3u_dtoa(double val, char *buf)
 {
 	int e;
 	double ten, lten;
-	int16_t exp;
+	int exp;
 	struct hp_t mid;
 	struct hp_t high = { val, 0.0 };
 	struct hp_t low = { val, 0.0 };
@@ -501,7 +501,7 @@ int errol4_dtoa(double val, char *buf)
 int errol4u_dtoa(double val, char *buf)
 {
 	int e;
-	int16_t exp;
+	int exp;
 	struct hp_t mid;
 	double ten, lten;
 
