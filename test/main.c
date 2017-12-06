@@ -68,7 +68,7 @@ int main(int argc, char **argv)
 	char **arg;
 	bool quiet = false, enum3 = false, enum4 = false, check3 = false, check4 = false;
 	int n, perf = 0, fuzz[5] = { 0, 0, 0, 0, 0 };
-	double lower = DBL_MIN, upper = DBL_MAX;
+	double lower = nextafter(0.0, DBL_MIN), upper = DBL_MAX;
 
 	for(arg = argv + 1; *arg != NULL; ) {
 		if(opt_num(&arg, "fuzz0", &n))
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Invalid option '%s'.\n", *arg), abort();
 	}
 
-	if(lower < DBL_MIN || DBL_MAX < upper || !(lower <= upper)) {
+	if(!(0 < lower) || !(upper <= DBL_MAX) || !(lower <= upper)) {
 		fprintf(stderr, "Invalid interval [%g, %g].\n", lower, upper);
 		exit(1);
 	}
