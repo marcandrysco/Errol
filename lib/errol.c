@@ -294,7 +294,7 @@ int errol2_dtoa(double val, char *buf, bool *opt)
 
 	int8_t i, j;
 	int exp;
-	union { double d; uint64_t i; } bits;
+	errol_bits_t bits;
 	char lstr[42], hstr[42], mstr[41];
 	uint64_t l64, m64, h64;
 	__uint128_t low, mid, high, pow19 = (__uint128_t)1e19;
@@ -758,7 +758,7 @@ static inline void hp_div10(struct hp_t *hp)
 
 static inline double gethi(double in)
 {
-	union { double d; uint64_t i; } v = { .d = in };
+	errol_bits_t v = { .d = in };
 
 	//v.i += 0x0000000004000000;
 	v.i &= 0xFFFFFFFFF8000000;
