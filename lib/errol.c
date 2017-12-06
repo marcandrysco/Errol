@@ -184,9 +184,6 @@ int errol1_dtoa(double val, char *buf, bool *opt)
 		return 309;
 	}
 
-	ten = 1.0;
-	exp = 1;
-
 	/* normalize the midpoint */
 
 	frexp(val, &e);
@@ -391,9 +388,6 @@ int errol3u_dtoa(double val, char *buf)
 		return errol_int(val, buf);
 	else if((val >= 16.0) && (val < 9.007199254740992e15))
 		return errol_fixed(val, buf);
-
-	ten = 1.0;
-	exp = 1;
 
 	/* normalize the midpoint */
 
