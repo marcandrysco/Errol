@@ -31,7 +31,7 @@ static inline double fpprev(double val)
 static inline __uint128_t fpeint(double from)
 {
 	errol_bits_t bits = { from };
-	assert((bits.i & ((1ULL << 52) - 1)) == 0);
+	assert((bits.i & ((1ULL << 52) - 1)) == 0 && (bits.i >> 52) >= 1023);
 
 	return (__uint128_t)1 << ((bits.i >> 52) - 1023);
 }
@@ -286,7 +286,7 @@ int errol1_dtoa(double val, char *buf, bool *opt)
 
 int errol2_dtoa(double val, char *buf, bool *opt)
 {
-	if((val < 9.007199254740992e15) || (val >= 3.40282366920938e38))
+	if((val <= 9.007199254740992e15) || (val >= 3.40282366920938e38))
 		return errol1_dtoa(val, buf, opt);
 
 	int8_t i, j;
@@ -384,9 +384,9 @@ int errol3u_dtoa(double val, char *buf)
 
 	/* check if in integer or fixed range */
 
-	if((val >= 9.007199254740992e15) && (val < 3.40282366920938e+38))
+	if((val > 9.007199254740992e15) && (val < 3.40282366920938e+38))
 		return errol_int(val, buf);
-	else if((val >= 16.0) && (val < 9.007199254740992e15))
+	else if((val >= 16.0) && (val <= 9.007199254740992e15))
 		return errol_fixed(val, buf);
 
 	/* normalize the midpoint */
@@ -503,7 +503,7 @@ int errol4u_dtoa(double val, char *buf)
 
 	if((val >= 1.80143985094820e+16) && (val < 3.40282366920938e+38))
 		return errol_int(val, buf);
-	else if((val >= 16.0) && (val < 9.007199254740992e15))
+	else if((val >= 16.0) && (val <= 9.007199254740992e15))
 		return errol_fixed(val, buf);
 	
 	/* normalize the midpoint */
@@ -580,7 +580,7 @@ int errol_int(double val, char *buf)
 	__uint128_t low, mid, high;
 	static __uint128_t pow19 = (__uint128_t)1e19;
 
-	assert((val >= 9.007199254740992e15) && val < (3.40282366920938e38));
+	assert((val > 9.007199254740992e15) && val < (3.40282366920938e38));
 
 	mid = (__uint128_t)val;
 	low = mid - fpeint((fpnext(val) - val) / 2.0);
@@ -643,7 +643,7 @@ int errol_fixed(double val, char *buf)
 	double n, mid, lo, hi;
 	uint64_t u;
 
-	assert((val >= 16.0) && (val < 9.007199254740992e15));
+	assert((val >= 16.0) && (val <= 9.007199254740992e15));
 
 	u = (uint64_t)val;
 	n = (double)u;
