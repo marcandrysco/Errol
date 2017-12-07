@@ -102,6 +102,11 @@ int errol0_dtoa(double val, char *buf)
 	int exp;
 	struct hp_t mid, inhi, inlo;
 
+	if(val == DBL_MAX) {
+		strcpy(buf, "17976931348623157");
+		return 309;
+	}
+
 	ten = 1.0;
 	exp = 1;
 
