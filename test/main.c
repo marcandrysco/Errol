@@ -24,7 +24,7 @@ static bool opt_real(char ***arg, const char *pre, double *num);
 static int intsort(const void *left, const void *right);
 static int err_t_sort(const void *left, const void *right);
 
-static double chk_conv(double val, const char *str, int32_t exp, bool *cor, bool *opt, bool *best);
+static double chk_conv(double val, const char *str, int exp, bool *cor, bool *opt, bool *best);
 
 static void table_add(struct errol_err_t[static 1024], int i, double val);
 static void table_enum(unsigned int ver, bool bld);
@@ -68,7 +68,7 @@ int main(int argc, char **argv)
 	char **arg;
 	bool quiet = false, enum3 = false, enum4 = false, check3 = false, check4 = false;
 	int n, perf = 0, fuzz[5] = { 0, 0, 0, 0, 0 };
-	double lower = DBL_MIN, upper = DBL_MAX;
+	double lower = nextafter(0.0, DBL_MIN), upper = DBL_MAX;
 
 	for(arg = argv + 1; *arg != NULL; ) {
 		if(opt_num(&arg, "fuzz0", &n))
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Invalid option '%s'.\n", *arg), abort();
 	}
 
-	if(lower < DBL_MIN || DBL_MAX < upper || !(lower <= upper)) {
+	if(!(0 < lower) || !(upper <= DBL_MAX) || !(lower <= upper)) {
 		fprintf(stderr, "Invalid interval [%g, %g].\n", lower, upper);
 		exit(1);
 	}
@@ -404,10 +404,10 @@ static int err_t_sort(const void *left, const void *right)
  *   &returns: The actual value.
  */
 
-static double chk_conv(double val, const char *str, int32_t exp, bool *cor, bool *opt, bool *best)
+static double chk_conv(double val, const char *str, int exp, bool *cor, bool *opt, bool *best)
 {
 	double chk;
-	int32_t dragon4exp;
+	int dragon4exp;
 	char dragon4[32], full[snprintf(NULL, 0, "0.%se%d", str, exp) + 1];
 
 	dragon4exp = dragon4_proc(val, dragon4);

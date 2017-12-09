@@ -209,7 +209,7 @@ extern "C" bool errolN_check(unsigned int n, double val)
 	char errol[32], dragon[32];
 
 	switch(n) {
-	case 0: errol1_dtoa(val, errol, &opt); break;
+	case 0: errol0_dtoa(val, errol); break;
 	case 1: errol1_dtoa(val, errol, &opt); break;
 	case 2: errol2_dtoa(val, errol, &opt); break;
 	case 3: errol3_dtoa(val, errol); break;
@@ -256,7 +256,7 @@ extern "C" int errolN_proc(unsigned int n, double val, char *buf, bool *opt)
 	*opt = true;
 
 	switch(n) {
-	case 0: return errol1_dtoa(val, buf, opt);
+	case 0: return errol0_dtoa(val, buf);
 	case 1: return errol1_dtoa(val, buf, opt);
 	case 2: return errol2_dtoa(val, buf, opt);
 	case 3: return errol3_dtoa(val, buf);

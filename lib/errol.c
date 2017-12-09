@@ -31,7 +31,7 @@ static inline double fpprev(double val)
 static inline __uint128_t fpeint(double from)
 {
 	errol_bits_t bits = { from };
-	assert((bits.i & ((1ULL << 52) - 1)) == 0);
+	assert((bits.i & ((1ULL << 52) - 1)) == 0 && (bits.i >> 52) >= 1023);
 
 	return (__uint128_t)1 << ((bits.i >> 52) - 1023);
 }
@@ -96,11 +96,16 @@ extern __uint128_t __udivmodti4(__uint128_t a, __uint128_t b,
  *   &returns: The exponent.
  */
 
-int16_t errol0_dtoa(double val, char *buf)
+int errol0_dtoa(double val, char *buf)
 {
 	double ten;
-	int16_t exp;
+	int exp;
 	struct hp_t mid, inhi, inlo;
+
+	if(val == DBL_MAX) {
+		strcpy(buf, "17976931348623157");
+		return 309;
+	}
 
 	ten = 1.0;
 	exp = 1;
@@ -172,20 +177,17 @@ int16_t errol0_dtoa(double val, char *buf)
  *   &returns: The exponent.
  */
 
-int16_t errol1_dtoa(double val, char *buf, bool *opt)
+int errol1_dtoa(double val, char *buf, bool *opt)
 {
 	double ten, lten;
 	int e;
-	int16_t exp;
+	int exp;
 	struct hp_t mid, inhi, inlo, outhi, outlo;
 
 	if(val == DBL_MAX) {
 		strcpy(buf, "17976931348623157");
 		return 309;
 	}
-
-	ten = 1.0;
-	exp = 1;
 
 	/* normalize the midpoint */
 
@@ -287,14 +289,14 @@ int16_t errol1_dtoa(double val, char *buf, bool *opt)
  *   &returns: The exponent.
  */
 
-int16_t errol2_dtoa(double val, char *buf, bool *opt)
+int errol2_dtoa(double val, char *buf, bool *opt)
 {
-	if((val < 9.007199254740992e15) || (val >= 3.40282366920938e38))
+	if((val <= 9.007199254740992e15) || (val >= 3.40282366920938e38))
 		return errol1_dtoa(val, buf, opt);
 
 	int8_t i, j;
-	int32_t exp;
-	union { double d; uint64_t i; } bits;
+	int exp;
+	errol_bits_t bits;
 	char lstr[42], hstr[42], mstr[41];
 	uint64_t l64, m64, h64;
 	__uint128_t low, mid, high, pow19 = (__uint128_t)1e19;
@@ -380,20 +382,17 @@ int errol3u_dtoa(double val, char *buf)
 {
 	int e;
 	double ten, lten;
-	int16_t exp;
+	int exp;
 	struct hp_t mid;
 	struct hp_t high = { val, 0.0 };
 	struct hp_t low = { val, 0.0 };
 
 	/* check if in integer or fixed range */
 
-	if((val >= 9.007199254740992e15) && (val < 3.40282366920938e+38))
+	if((val > 9.007199254740992e15) && (val < 3.40282366920938e+38))
 		return errol_int(val, buf);
-	else if((val >= 16.0) && (val < 9.007199254740992e15))
+	else if((val >= 16.0) && (val <= 9.007199254740992e15))
 		return errol_fixed(val, buf);
-
-	ten = 1.0;
-	exp = 1;
 
 	/* normalize the midpoint */
 
@@ -501,7 +500,7 @@ int errol4_dtoa(double val, char *buf)
 int errol4u_dtoa(double val, char *buf)
 {
 	int e;
-	int16_t exp;
+	int exp;
 	struct hp_t mid;
 	double ten, lten;
 
@@ -509,7 +508,7 @@ int errol4u_dtoa(double val, char *buf)
 
 	if((val >= 1.80143985094820e+16) && (val < 3.40282366920938e+38))
 		return errol_int(val, buf);
-	else if((val >= 16.0) && (val < 9.007199254740992e15))
+	else if((val >= 16.0) && (val <= 9.007199254740992e15))
 		return errol_fixed(val, buf);
 	
 	/* normalize the midpoint */
@@ -586,7 +585,7 @@ int errol_int(double val, char *buf)
 	__uint128_t low, mid, high;
 	static __uint128_t pow19 = (__uint128_t)1e19;
 
-	assert((val >= 9.007199254740992e15) && val < (3.40282366920938e38));
+	assert((val > 9.007199254740992e15) && val < (3.40282366920938e38));
 
 	mid = (__uint128_t)val;
 	low = mid - fpeint((fpnext(val) - val) / 2.0);
@@ -649,7 +648,7 @@ int errol_fixed(double val, char *buf)
 	double n, mid, lo, hi;
 	uint64_t u;
 
-	assert((val >= 16.0) && (val < 9.007199254740992e15));
+	assert((val >= 16.0) && (val <= 9.007199254740992e15));
 
 	u = (uint64_t)val;
 	n = (double)u;
@@ -758,7 +757,7 @@ static inline void hp_div10(struct hp_t *hp)
 
 static inline double gethi(double in)
 {
-	union { double d; uint64_t i; } v = { .d = in };
+	errol_bits_t v = { .d = in };
 
 	//v.i += 0x0000000004000000;
 	v.i &= 0xFFFFFFFFF8000000;
